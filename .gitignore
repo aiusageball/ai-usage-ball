@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Node / frontend
+node_modules/
+dist/
+dashboard/dist/
+
+# Rust / Tauri build artifacts (huge, regenerated on build)
+dashboard/src-tauri/target/
+dashboard/src-tauri/gen/
+
+# Python backend
+server/venv/
+server/__pycache__/
+**/__pycache__/
+*.pyc
+# Ad-hoc local debug scripts (hardcode this machine's paths, not part of the app)
+server/test_*.py
+
+# Xcode / watchOS
+DerivedData/
+xcuserdata/
+*.xcuserstate
+Build/
+
+# Signed build artifacts (not source — distributed via aiusageball.com)
+*.dmg
+
+# Unrelated local scratch projects living alongside this repo
+eager-pythagoras/
+valiant-maxwell/
+WatchAppSource/

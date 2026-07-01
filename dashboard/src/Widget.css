@@ -1,0 +1,172 @@
+/* ==========================================================================
+   AI Pulse Widget — Transparent Desktop Floating Orb
+   ========================================================================== */
+
+/* Import shared orb styles from the main stylesheet */
+@import './App.css';
+
+/* Override: transparent body & full-window drag region */
+html, body, #widget-root {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.widget-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+  cursor: grab;
+}
+
+.widget-container:active {
+  cursor: grabbing;
+}
+
+/* Override orb wrapper for widget — remove any flex column spacing */
+.widget-container .orb-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+/* Make the orb slightly smaller for widget mode */
+.widget-container .orb-glass {
+  width: 160px;
+  height: 160px;
+}
+
+/* Scale ground glow for smaller orb */
+.widget-container .orb-ground-glow {
+  bottom: 48px;
+  width: 100px;
+  height: 12px;
+}
+
+/* Smaller labels for widget */
+.widget-container .orb-title {
+  font-size: 0.65rem;
+}
+
+.widget-container .orb-subtitle {
+  font-size: 0.55rem;
+}
+
+/* Smaller timer text for widget */
+.widget-container .orb-timer {
+  font-size: 1.2rem;
+}
+
+.widget-container .orb-timer-secondary {
+  font-size: 0.7rem;
+}
+
+/* Hide the main app styles that don't apply to widget */
+.pulse-desktop-environment,
+.popover-window,
+.popover-header-section,
+.popover-footer-accent,
+.concrete-overlay,
+.settings-modal-overlay {
+  display: none !important;
+}
+
+/* ── Remove the rectangular frame that appears on hover ──
+   On a transparent macOS window, `backdrop-filter` renders its (rectangular)
+   backing region as a visible box, and focusing the drag-region element draws
+   a focus outline. Both look like a wireframe around the orb. Kill them. */
+.widget-container .orb-glass {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.widget-container,
+.widget-container * {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The "ground reflection" glow uses mix-blend-mode: screen, which renders its
+   rectangular backing layer as a visible box on a transparent window (most
+   noticeable on hover when it scales/brightens). A floating widget has no
+   ground anyway — drop it. */
+.widget-container .orb-ground-glow {
+  display: none !important;
+}
+
+/* The liquid video is a square with a black background; scaled down it shows as
+   a black box inside the orb (the dark main window hides it, the transparent
+   widget doesn't). Feather it into a circle so only the liquid remains. */
+.widget-container .video-blob {
+  -webkit-mask-image: radial-gradient(circle, #000 60%, transparent 78%);
+  mask-image: radial-gradient(circle, #000 60%, transparent 78%);
+}
+
+/* Drop the heavy outer drop-shadow (base + hover). On the dark main window it's
+   invisible; on the transparent widget it reads as a dark rounded frame that
+   appears when hovering. Keep only the inset glass shading. */
+.widget-container .orb-glass,
+.widget-container .orb-glass:hover {
+  box-shadow:
+    inset 0 0 35px rgba(0, 0, 0, 0.9),
+    inset 0 0 10px rgba(255, 255, 255, 0.25),
+    inset 0 -20px 40px rgba(255, 255, 255, 0.18) !important;
+}
+
+/* ── Compact label lines (kill default h3/p margins; tighten spacing) ── */
+.widget-container .orb-label-container {
+  margin-top: 12px;
+  gap: 2px;
+}
+.widget-container .orb-title,
+.widget-container .orb-subtitle {
+  margin: 0;
+  line-height: 1.25;
+}
+
+/* ── Right-click context menu ── */
+.widget-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 150px;
+  padding: 5px;
+  border-radius: 10px;
+  background: rgba(28, 28, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.widget-context-menu button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.78rem;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.widget-context-menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.widget-context-menu button.danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fff;
+}

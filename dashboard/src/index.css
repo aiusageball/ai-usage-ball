@@ -1,0 +1,66 @@
+:root {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: #f3f4f6;
+  background-color: transparent;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Color Variables */
+  --bg-primary: #07090c;
+  --bg-secondary: #0d1117;
+  --card-bg: rgba(18, 22, 30, 0.6);
+  --card-border: rgba(255, 255, 255, 0.05);
+  
+  --color-antigravity: #06b6d4;      /* Cyber Teal */
+  --color-antigravity-glow: rgba(6, 182, 212, 0.15);
+  --color-antigravity-rgb: 6, 182, 212;
+  --color-claude: #f97316;            /* Sunset Coral */
+  --color-claude-glow: rgba(249, 115, 22, 0.15);
+  --color-claude-rgb: 249, 115, 22;
+  --color-codex: #10b981;             /* Emerald green */
+  --color-codex-glow: rgba(16, 185, 129, 0.15);
+  --color-codex-rgb: 16, 185, 129;
+
+  --text-primary: #f3f4f6;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: transparent;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+code, pre {
+  font-family: 'JetBrains Mono', 'Fira Code', source-code-pro, Menlo, Monaco, Consolas, monospace;
+}
