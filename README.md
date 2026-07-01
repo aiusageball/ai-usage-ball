@@ -5,6 +5,8 @@ coding-tool quota — Claude, Codex / ChatGPT, and Antigravity — you have left
 as animated liquid gauges. Session limits, weekly limits, and reset
 countdowns, at a glance.
 
+![AI Usage Ball — three liquid orbs showing Claude, Codex, and Antigravity usage remaining](docs/screenshot.png)
+
 **Get the signed, notarized build:** [aiusageball.com](https://aiusageball.com)
 (one-time purchase, 30-day free trial, no subscription).
 
