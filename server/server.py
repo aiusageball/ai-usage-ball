@@ -89,10 +89,6 @@ state = {
     "antigravity": {
         "provider": "Antigravity",
         "available": None,   # None = 尚未探测(前端不显示灰);探测后置 True/False
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "requests": 0,
-        "cost": 0.0,
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
@@ -101,16 +97,10 @@ state = {
         "reset_time_secondary": "",
         "resetsAt": "",
         "resetsAt_secondary": "",
-        "ai_credits": 780,
-        "extraRateWindows": [],
         "logs": []
     },
     "claude": {
         "provider": "Claude",
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "requests": 0,
-        "cost": 0.0,
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
@@ -125,10 +115,6 @@ state = {
     },
     "codex": {
         "provider": "Codex",
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "requests": 0,
-        "cost": 0.0,
         "rate_limit_pct": 0.0,
         "status": "NORMAL",
         "reset_time": "",
@@ -137,18 +123,6 @@ state = {
         "logs": []
     }
 }
-
-# Cost configurations per 1M tokens
-COST_RATES = {
-    "antigravity": {"input": 0.075, "output": 0.30},  # Gemini 1.5 Flash rates
-    "claude": {"input": 3.00, "output": 15.00},       # Claude 3.5 Sonnet rates
-    "codex": {"input": 2.50, "output": 10.00}         # OpenAI GPT-4o Codex rates
-}
-
-# All machine-specific paths are overridable via environment variables so the
-# app is not hard-wired to one user's home directory.
-LOG_FILE = os.environ.get("AIPULSE_LOG_FILE", "")
-last_processed_line = 0
 
 def safe_pct(value) -> float:
     """Coerce a usedPercent value to float, treating None/invalid as 0."""
@@ -203,266 +177,8 @@ def clamp_expired_windows():
         co["status"] = "NORMAL"
         co["resetsAt"] = ""
 
-def estimate_tokens(text: str) -> int:
-    """Simple robust heuristic: 4 characters = 1 token"""
-    if not text:
-        return 0
-    return max(1, len(text) // 4)
-
-def update_antigravity_metrics():
-    global last_processed_line
-    if not os.path.exists(LOG_FILE):
-        return
-
-    try:
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        # If the file shrank, it was rotated or truncated — reset the cursor so
-        # we don't get permanently stuck never reading new content again.
-        if len(lines) < last_processed_line:
-            last_processed_line = 0
-
-        if len(lines) <= last_processed_line:
-            return
-
-        new_lines = lines[last_processed_line:]
-        last_processed_line = len(lines)
-
-        for line in new_lines:
-            try:
-                data = json.loads(line.strip())
-                step_type = data.get("type", "")
-                source = data.get("source", "")
-                content = data.get("content", "")
-                tool_calls = data.get("tool_calls", [])
-
-                inp_tokens = 0
-                out_tokens = 0
-                log_msg = ""
-
-                # 1. User Input
-                if step_type == "USER_INPUT":
-                    inp_tokens = estimate_tokens(content)
-                    state["antigravity"]["requests"] += 1
-                    log_msg = f"User: {content[:80]}..."
-                
-                # 2. Model Response (Actual Output)
-                elif step_type == "PLANNER_RESPONSE":
-                    out_tokens = estimate_tokens(content)
-                    if tool_calls:
-                        out_tokens += estimate_tokens(str(tool_calls))
-                        log_msg = f"Agent tool call: {[tc.get('name') for tc in tool_calls]}"
-                    else:
-                        log_msg = f"Agent response: {content[:80]}..."
-                
-                # 3. Tool results or system actions (Inputs to the model for next step)
-                else:
-                    inp_tokens = estimate_tokens(content)
-                    if step_type not in ["CONVERSATION_HISTORY", "SYSTEM"]:
-                        log_msg = f"Tool output [{step_type}]: {content[:60]}..."
-
-                # Update metrics
-                state["antigravity"]["input_tokens"] += inp_tokens
-                state["antigravity"]["output_tokens"] += out_tokens
-                
-                # Update Costs
-                state["antigravity"]["cost"] = (
-                    (state["antigravity"]["input_tokens"] / 1000000.0 * COST_RATES["antigravity"]["input"]) +
-                    (state["antigravity"]["output_tokens"] / 1000000.0 * COST_RATES["antigravity"]["output"])
-                )
-
-                if log_msg:
-                    timestamp = time.strftime("%H:%M:%S")
-                    state["antigravity"]["logs"].insert(0, {
-                        "time": timestamp,
-                        "msg": log_msg,
-                        "tokens": inp_tokens + out_tokens
-                    })
-                    state["antigravity"]["logs"] = state["antigravity"]["logs"][:30] # Keep last 30 logs
-
-            except Exception as e:
-                print(f"Error parsing line: {e}")
-
-    except Exception as e:
-        print(f"Error reading log file: {e}")
-
-# Background CodexBar CLI Polling Task
-CODEXBAR_CLI = os.environ.get(
-    "AIPULSE_CODEXBAR_CLI",
-    "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI",
-)
-
-def format_iso_timestamp(iso_str: str) -> str:
-    if not iso_str:
-        return ""
-    try:
-        iso_str_clean = iso_str.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(iso_str_clean)
-        # Local timezone offset in hours, defaults to UTC+10 (AEST). Override with AIPULSE_TZ_OFFSET.
-        tz_offset = float(os.environ.get("AIPULSE_TZ_OFFSET", "10"))
-        local_tz = timezone(timedelta(hours=tz_offset))
-        dt_local = dt.astimezone(local_tz)
-        return dt_local.strftime("%b %d at %-I:%M %p")
-    except Exception as e:
-        print(f"Error formatting timestamp {iso_str}: {e}")
-        return iso_str
-
-# ── Claude: real usage straight from Anthropic's OAuth endpoint ──
-# Reuses the Claude Code OAuth token already on this machine (no CodexBar, no
-# browser cookies). Approach mirrors the open-source CodexBar (MIT, steipete).
+# ── Claude: real usage via claude.ai cookie (primary) / OAuth token (read-only fallback) ──
 CLAUDE_CREDS_FILE = os.path.expanduser("~/.claude/.credentials.json")
-CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
-
-def _find_access_token(obj):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k.lower() in ("accesstoken", "access_token") and isinstance(v, str):
-                return v
-            found = _find_access_token(v)
-            if found:
-                return found
-    return None
-
-def _find_expires_at(obj):
-    """Walk the credential JSON to find 'expiresAt' (epoch ms)."""
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k == "expiresAt" and isinstance(v, (int, float)):
-                return v
-            found = _find_expires_at(v)
-            if found is not None:
-                return found
-    return None
-
-_cached_cookie_token = None
-_cached_cookie_expiry = None
-
-def get_claude_token_with_expiry():
-    """Read the Claude Code OAuth access token + expiresAt from the credentials
-    file AND the macOS Keychain, and return whichever is still valid (preferring
-    the freshest). Returns (token, expires_epoch_s) or (None, None)."""
-    global _cached_cookie_token, _cached_cookie_expiry
-
-    def _parse_raw(raw):
-        """Parse a raw JSON string into (token, expires_epoch_s) or (None, None)."""
-        if not raw:
-            return None, None
-        try:
-            obj = json.loads(raw)
-            token = _find_access_token(obj)
-            expires_ms = _find_expires_at(obj)
-            expires_s = (expires_ms / 1000.0) if expires_ms and expires_ms > 1e12 else (expires_ms or None)
-            return token, expires_s
-        except Exception:
-            if raw.startswith("sk-ant"):
-                return raw, None
-            return None, None
-
-    candidates = []
-    now = time.time()
-
-    # Source 1: credentials file
-    if os.path.exists(CLAUDE_CREDS_FILE):
-        try:
-            with open(CLAUDE_CREDS_FILE) as f:
-                token, exp = _parse_raw(f.read())
-            if token:
-                candidates.append((token, exp))
-        except Exception:
-            pass
-
-    # Source 2: macOS Keychain
-    try:
-        raw = subprocess.check_output(
-            ["security", "find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-w"],
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-        ).decode().strip()
-        token, exp = _parse_raw(raw)
-        if token:
-            candidates.append((token, exp))
-    except Exception:
-        pass
-
-
-
-    # Prefer the candidate that is NOT expired. Among valid ones, pick the
-    # one that expires latest (freshest). If all are expired, return the one
-    # that expired most recently (least stale).
-    def sort_key(pair):
-        _, exp = pair
-        if exp is None:
-            return (0, 0)           # unknown expiry: treat as maybe-valid, low priority
-        valid = 1 if exp > now else 0
-        return (valid, exp)
-
-    candidates.sort(key=sort_key, reverse=True)
-    best_candidate = candidates[0] if candidates else (None, None)
-
-    # Source 3: Browser Cookies (Zero-login fallback)
-    # If we have no valid candidate from CLI/Keychain (meaning we have none, or the best one is expired)
-    # then fallback to extracting the cookie directly from the user's browser, matching CodexBar behavior.
-    best_exp = best_candidate[1]
-    is_valid = best_exp is not None and best_exp > now
-    
-    if not is_valid:
-        # Check our in-memory cache first to avoid spamming the user with macOS Keychain prompts
-        if _cached_cookie_token and _cached_cookie_expiry and _cached_cookie_expiry > now:
-            return _cached_cookie_token, _cached_cookie_expiry
-
-        print("CLI/Keychain tokens expired or missing. Falling back to browser cookies...")
-        cookie_found = False
-        
-        # 1. Try rookiepy (fastest, Rust-based)
-        try:
-            import rookiepy
-            for browser_func in [rookiepy.chrome, rookiepy.safari, rookiepy.edge, rookiepy.brave]:
-                try:
-                    cookies = browser_func(["claude.ai"])
-                    for c in cookies:
-                        if c.get("name") == "sessionKey" and c.get("value", "").startswith("sk-ant"):
-                            print(f"✅ Found sessionKey via rookiepy")
-                            exp = c.get("expires", c.get("expires_on"))
-                            if not exp:
-                                exp = now + (30 * 86400)
-                            _cached_cookie_token = c["value"]
-                            _cached_cookie_expiry = exp
-                            return c["value"], exp
-                except Exception:
-                    continue
-        except ImportError:
-            pass
-            
-        # 2. Try browser_cookie3 (pure python)
-        if not cookie_found:
-            try:
-                import browser_cookie3
-                # We try browsers individually because Safari might throw "Operation not permitted"
-                # without Full Disk Access, and we don't want that to crash the Chrome extraction.
-                for loader in [browser_cookie3.chrome, browser_cookie3.safari, browser_cookie3.edge, browser_cookie3.firefox]:
-                    try:
-                        cj = loader(domain_name="claude.ai")
-                        for c in cj:
-                            if c.name == "sessionKey" and c.value.startswith("sk-ant"):
-                                print(f"✅ Found sessionKey via browser_cookie3 ({loader.__name__})")
-                                exp = c.expires if c.expires else now + (30 * 86400)
-                                _cached_cookie_token = c.value
-                                _cached_cookie_expiry = exp
-                                return c.value, exp
-                    except Exception as e:
-                        continue
-            except ImportError:
-                print("Neither rookiepy nor browser_cookie3 installed.")
-            except Exception as e:
-                print(f"browser_cookie3 fallback failed: {e}")
-
-    return best_candidate
-
-# Keep the old name as an alias for backwards compatibility.
-def get_claude_token():
-    token, _ = get_claude_token_with_expiry()
-    return token
 
 def fetch_claude_usage(token):
     req = urllib.request.Request(
@@ -503,31 +219,12 @@ def _get_claude_sessionkey():
             continue
     return None
 
+_cached_claude_org_id = None
+
 def fetch_claude_usage_via_cookie():
     """用 sessionKey 调 claude.ai usage API,返回与 OAuth usage 同构的 dict
     (含 five_hour / seven_day),失败返回 None。"""
-    sk = _get_claude_sessionkey()
-    if not sk:
-        return None
-    def _get(url):
-        req = urllib.request.Request(url, headers={
-            "Cookie": f"sessionKey={sk}", "User-Agent": _CLAUDE_WEB_UA,
-            "Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return json.loads(r.read().decode())
-    try:
-        orgs = _get("https://claude.ai/api/organizations")
-        oid = orgs[0]["uuid"] if isinstance(orgs, list) and orgs else None
-        if not oid:
-            return None
-        return _get(f"https://claude.ai/api/organizations/{oid}/usage")
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            global _cached_claude_sessionkey
-            _cached_claude_sessionkey = None   # cookie 失效 → 下次重新从浏览器读
-        return None
-    except Exception:
-        return None
+    global _cached_claude_org_id, _c
 
 def _read_file_access_token():
     """只读 ~/.claude/.credentials.json 里现成的 access_token(不刷新)。OAuth 兜底用。"""
@@ -558,78 +255,9 @@ def _log_claude(msg, dedup=False):
     logs.insert(0, {"time": time.strftime("%H:%M:%S"), "msg": msg, "tokens": 0})
     state["claude"]["logs"] = logs[:30]
 
-# Claude Code 的公开 OAuth client_id + 刷新端点(实测 api.anthropic.com 可用,
-# console.anthropic.com 被 Cloudflare 挡 403)。
-CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-CLAUDE_OAUTH_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
-
-def refresh_claude_token_file():
-    """用 ~/.claude/.credentials.json 里的 refresh_token 换一套新 token、写回文件,
-    返回新的 access_token(失败返回 None)。
-
-    这让 AI Pulse 自己刷新、不再寄生于 Claude CLI —— 你一段时间不用 CLI,token 也不
-    会馊掉(以前正是这样反复过期)。只动这个文件,**不碰 Keychain**(那里还存着十几个
-    MCP 插件的 OAuth token,误写会全抹掉)。AI Pulse 取 token 时本就优先读文件。"""
-    try:
-        with open(CLAUDE_CREDS_FILE) as f:
-            cred = json.load(f)
-    except Exception:
-        return None
-    oauth = cred.get("claudeAiOauth") or {}
-    rt = oauth.get("refreshToken")
-    if not rt:
-        return None
-    try:
-        body = json.dumps({
-            "grant_type": "refresh_token",
-            "refresh_token": rt,
-            "client_id": CLAUDE_OAUTH_CLIENT_ID,
-        }).encode()
-        req = urllib.request.Request(
-            CLAUDE_OAUTH_TOKEN_URL, data=body,
-            headers={"Content-Type": "application/json"})
-        new = json.loads(urllib.request.urlopen(req, timeout=20).read().decode())
-    except Exception as e:
-        print(f"Claude token refresh failed: {e}")
-        return None
-    at = new.get("access_token")
-    if not at:
-        return None
-    oauth["accessToken"] = at
-    oauth["refreshToken"] = new.get("refresh_token", rt)   # refresh token 会轮换,存回新的
-    ein = new.get("expires_in")
-    if ein:
-        oauth["expiresAt"] = int((time.time() + ein) * 1000)
-    cred["claudeAiOauth"] = oauth
-    try:
-        tmp = CLAUDE_CREDS_FILE + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(cred, f, indent=2)
-        os.replace(tmp, CLAUDE_CREDS_FILE)   # 原子替换,避免写一半损坏
-        os.chmod(CLAUDE_CREDS_FILE, 0o600)
-    except Exception as e:
-        print(f"Claude token write-back failed: {e}")
-        return None
-    print("✅ Claude OAuth token auto-refreshed.")
-    return at
-
-def maybe_refresh_claude_token():
-    """文件 token 已过期 / 5 分钟内将过期 → 主动刷新。
-
-    放在 poll 每轮开头调用,确保后端优先用「官方 refresh_token 刷出来的新鲜 token」,
-    而不是依赖浏览器登录的 cookie 回退(那个一旦你没在浏览器登录 claude.ai 就失效)。"""
-    try:
-        with open(CLAUDE_CREDS_FILE) as f:
-            exp = (json.load(f).get("claudeAiOauth") or {}).get("expiresAt")
-    except Exception:
-        return
-    if exp and time.time() > (exp / 1000 - 300):
-        refresh_claude_token_file()
-
-# Track whether we already logged the "token expired" message so we don't spam.
-_claude_expired_logged = False
-# 上次自动刷新的时间戳,用来给 401 自动刷新节流(避免刷出来仍被拒时狂刷端点)。
-_claude_last_refresh = 0.0
+# NOTE: 这里绝不能加"自己刷新 OAuth token"的逻辑 —— refresh_token 是一次性轮换的,
+# 和 Claude CLI 抢刷新会触发服务端把整条链吊销(access+refresh 全废)。刷新只归 CLI 管;
+# 本服务对 OAuth token 只读。曾经犯过这个错,别再犯。
 
 async def poll_claude_oauth():
     """Claude 用量轮询:cookie 为主源(对标 CodexBar,永不失效),OAuth token 只读兜底。
@@ -940,16 +568,14 @@ def get_video(request: Request):
 
 @app.get("/api/stats")
 def get_stats():
-    update_antigravity_metrics()
     return state
 
 async def background_ticker():
-    """Single source of state mutation, runs once regardless of how many SSE
-    clients are connected. Only refreshes REAL data — the Antigravity token
-    estimate from the local log. Rate-limit %/reset for all providers come from
-    the CodexBar polling task; no values are simulated."""
+    """Single source of state mutation, runs regardless of how many SSE clients
+    are connected. Real rate-limit %/reset values come from the per-provider
+    polling tasks; here we only clamp windows whose reset time has passed so we
+    never show stale (post-reset) data as current."""
     while True:
-        update_antigravity_metrics()
         clamp_expired_windows()   # don't show stale (post-reset) data as current
         await asyncio.sleep(1.0)  # Tick every 1 second
 

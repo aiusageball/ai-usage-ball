@@ -712,9 +712,7 @@ function App() {
       reset_time: "",
       reset_time_secondary: "",
       resetsAt: "",
-      resetsAt_secondary: "",
-      ai_credits: 780,
-      extraRateWindows: []
+      resetsAt_secondary: ""
     },
     claude: {
       provider: "Claude",
