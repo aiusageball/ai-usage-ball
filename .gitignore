@@ -31,3 +31,6 @@ Build/
 eager-pythagoras/
 valiant-maxwell/
 WatchAppSource/
+
+# PyInstaller sidecar binary (28MB, built from server/ — see README)
+dashboard/src-tauri/binaries/

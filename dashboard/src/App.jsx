@@ -582,12 +582,15 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
                 // Only retry a cold-start failure (backend not up yet). Once the
                 // video has loaded, never call load() again — reloading wipes the
                 // buffer and makes the orb blink.
-                // ~20s window so a slow backend cold-start still recovers.
-                if (loadedOnceRef.current || videoRetryRef.current >= 10) return;
+                // ~2min window (40 × 3s): the bundled PyInstaller backend is a
+                // one-file build that unpacks on first launch (~15s) plus a
+                // first-run Gatekeeper check, so the video endpoint can take a
+                // while to come up. A short window left the orbs permanently dry.
+                if (loadedOnceRef.current || videoRetryRef.current >= 40) return;
                 videoRetryRef.current += 1;
                 setTimeout(() => {
                   try { videoRef.current && videoRef.current.load(); } catch (e) {}
-                }, 2000);
+                }, 3000);
               }}
               style={{
                 transform: `scale(${Math.max(0.01, validPct / 100)})`,

@@ -1,3 +1,4 @@
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -5,6 +6,28 @@ use tauri::Manager;
 
 /// Holds the spawned Python backend so it can be killed when the app exits.
 struct BackendProcess(Mutex<Option<Child>>);
+
+/// Kill the backend and ALL its descendants. The bundled backend is a
+/// PyInstaller one-file binary: a bootloader process that spawns the real
+/// server as a child. Killing just our direct child (the bootloader) orphans
+/// the server, which keeps port 8000 bound forever — the next app launch then
+/// can't start its own backend and shows stale data. We spawn the backend in
+/// its own process group (pgid = its pid) so one group-kill takes out the
+/// whole tree.
+fn kill_backend(state: &BackendProcess) {
+    if let Ok(mut guard) = state.0.lock() {
+        if let Some(child) = guard.as_mut() {
+            let pid = child.id();
+            // Negative pid = kill the entire process group.
+            let _ = Command::new("kill")
+                .args(["-9", &format!("-{pid}")])
+                .status();
+            let _ = child.kill(); // fallback + reaps the direct child
+            let _ = child.wait();
+        }
+        *guard = None;
+    }
+}
 
 /// Launch the desktop app for a given provider orb (double-click on a widget).
 /// Whitelisted to the three known apps so the frontend can't ask us to `open`
@@ -55,19 +78,53 @@ fn secure_set(key: String, value: String) -> Result<(), String> {
 
 /// Start the FastAPI backend that the frontend connects to on 127.0.0.1:8000.
 ///
-/// Paths default to this repo's layout (resolved relative to the crate, not a
-/// hard-coded home directory) and can be overridden with AIPULSE_PYTHON /
-/// AIPULSE_SERVER. Note: a distributable bundle would need the Python runtime
-/// packaged as a sidecar — this auto-start covers `tauri dev` and a machine
-/// where the server's venv already exists.
+/// Order of preference:
+///  1. The self-contained sidecar binary bundled inside the app
+///     (Contents/MacOS/aipulse-server) — this is what ships to end users; the
+///     whole Python backend is frozen into it by PyInstaller, so no Python
+///     install or venv is required on their machine.
+///  2. A venv + server.py under ~/Library/Application Support (dev machines
+///     that set this up), overridable via AIPULSE_PYTHON / AIPULSE_SERVER.
+///  3. The repo's server/venv (running from a source checkout).
 fn spawn_backend() -> Option<Child> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .../dashboard/src-tauri
+    // Sweep up any backend left over from a previous run (crash, or an older
+    // version that didn't group-kill). A stale instance keeps port 8000 bound,
+    // which would silently prevent this launch's backend from starting and
+    // leave the orbs frozen on old data.
+    let _ = Command::new("pkill")
+        .args(["-f", "Contents/MacOS/aipulse-server"])
+        .status();
 
-    // Prefer the self-contained backend under ~/Library/Application Support — the
-    // repo lives in an iCloud-synced ~/Documents, and launching a venv Python
-    // from there hangs in Python's startup (the iCloud file provider blocks the
-    // open() of the venv path files for a GUI-spawned process). App Support is
-    // not iCloud-synced, so the interpreter starts cleanly.
+    let quiet = |mut cmd: Command| {
+        // Discard stdout/stderr — an inherited, unread pipe can fill up and
+        // stall the server before it finishes binding the port.
+        // process_group(0): run the backend in its own process group (pgid =
+        // child pid) so kill_backend can take out the PyInstaller bootloader
+        // AND the real server it spawns with a single group-kill.
+        cmd.stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+    };
+
+    // 1) Bundled sidecar: sits next to the main app binary in Contents/MacOS.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sidecar = dir.join("aipulse-server");
+            if sidecar.exists() {
+                match quiet(Command::new(&sidecar)) {
+                    Ok(child) => {
+                        println!("Started bundled AI Usage Ball backend (pid {})", child.id());
+                        return Some(child);
+                    }
+                    Err(e) => eprintln!("Failed to start bundled backend: {e}"),
+                }
+            }
+        }
+    }
+
+    // 2 & 3) Fall back to a Python venv + server.py (development machines).
+    let manifest_dir = env!("CARGO_MANIFEST_DIR"); // .../dashboard/src-tauri
     let home = std::env::var("HOME").unwrap_or_default();
     let app_support = format!("{home}/Library/Application Support/AIPulse");
     let repo_python = format!("{manifest_dir}/../../server/venv/bin/python");
@@ -83,26 +140,21 @@ fn spawn_backend() -> Option<Child> {
 
     if !Path::new(&python).exists() || !Path::new(&server).exists() {
         eprintln!(
-            "AI Pulse backend not found (python={python}, server={server}); \
-             skipping auto-start — start the server manually."
+            "AI Usage Ball backend not found (no bundled sidecar, python={python}, \
+             server={server}); skipping auto-start."
         );
         return None;
     }
 
-    // Discard the child's stdout/stderr — an inherited, unread pipe can fill up
-    // and stall the server before it finishes binding the port.
-    match Command::new(&python)
-        .arg(&server)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+    let mut cmd = Command::new(&python);
+    cmd.arg(&server);
+    match quiet(cmd) {
         Ok(child) => {
-            println!("Started AI Pulse backend (pid {})", child.id());
+            println!("Started AI Usage Ball backend from venv (pid {})", child.id());
             Some(child)
         }
         Err(e) => {
-            eprintln!("Failed to start AI Pulse backend: {e}");
+            eprintln!("Failed to start AI Usage Ball backend: {e}");
             None
         }
     }
@@ -138,13 +190,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                // Tear down the backend we spawned so it doesn't outlive the app.
-                if let Some(state) = app_handle.try_state::<BackendProcess>() {
-                    if let Some(child) = state.0.lock().unwrap().as_mut() {
-                        let _ = child.kill();
+            // Tear down the backend (whole process group) so it doesn't outlive
+            // the app. Handle BOTH exit events: in practice quitting via the
+            // Apple quit event only reliably delivers RunEvent::Exit here, and
+            // relying on ExitRequested alone left zombie backends holding
+            // port 8000.
+            match event {
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+                    if let Some(state) = app_handle.try_state::<BackendProcess>() {
+                        kill_backend(&state);
                     }
                 }
+                _ => {}
             }
         });
 }

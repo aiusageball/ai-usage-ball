@@ -245,11 +245,13 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
               }}
               onLoadedData={() => { loadedOnceRef.current = true; }}
               onError={() => {
-                if (loadedOnceRef.current || videoRetryRef.current >= 10) return;
+                // ~2min window — bundled PyInstaller backend unpacks slowly on
+                // first launch, so the video endpoint can take a while. (See App.jsx.)
+                if (loadedOnceRef.current || videoRetryRef.current >= 40) return;
                 videoRetryRef.current += 1;
                 setTimeout(() => {
                   try { videoRef.current && videoRef.current.load(); } catch (e) {}
-                }, 2000);
+                }, 3000);
               }}
               style={{
                 transform: `scale(${Math.max(0.01, validPct / 100)})`,

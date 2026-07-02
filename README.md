@@ -1,18 +1,19 @@
 # AI Usage Ball
 
-A living "crystal ball" for your macOS desktop that shows how much of your AI
-coding-tool quota — Claude, Codex / ChatGPT, and Antigravity — you have left,
-as animated liquid gauges. Session limits, weekly limits, and reset
-countdowns, at a glance.
+A source-available macOS desktop app that shows how much of your AI coding-tool
+quota — Claude, Codex / ChatGPT, and Antigravity — you have left, as animated
+liquid gauges. Session limits, weekly limits, and reset countdowns, at a
+glance.
 
 ![AI Usage Ball — three liquid orbs showing Claude, Codex, and Antigravity usage remaining](docs/screenshot.png)
 
 **Get the signed, notarized build:** [aiusageball.com](https://aiusageball.com)
 (one-time purchase, 30-day free trial, no subscription).
 
-This repository is the full source, published so anyone can audit exactly
-what the app reads from your machine and how — see [License](#license) for
-what you can and can't do with it.
+This repository is the full source, published so anyone can audit exactly what
+the app reads from your machine and how. It is source-available for
+auditability and noncommercial self-builds — see [License](#license) for what
+you can and can't do with it.
 
 ## What's in here
 
@@ -22,6 +23,13 @@ what you can and can't do with it.
 | `server/` | Python (FastAPI) backend the app talks to on `127.0.0.1:8000`. Reads local usage data (Claude via browser session cookie / CLI credentials, Codex via `~/.codex/auth.json`, Antigravity via local process detection) and streams it to the frontend over SSE. |
 | `AiPulseWatch/` | watchOS companion (SwiftUI), work in progress. |
 | `landing/` | Source for the [aiusageball.com](https://aiusageball.com) marketing site (static HTML, no build step). |
+
+## Why developers use it
+
+- Keep AI coding-tool limits visible before a session unexpectedly runs out.
+- See reset countdowns and weekly/session windows without opening each provider.
+- Audit the local readers that collect usage state from your own Mac.
+- Run the desktop UI as a Tauri app backed by a local FastAPI service.
 
 ## How it reads your usage
 
@@ -47,10 +55,31 @@ npm install
 npm run tauri:dev
 ```
 
-Building a distributable `.app`/`.dmg` requires your own Apple Developer
-Program signing identity (see `dashboard/src-tauri/tauri.conf.json` →
-`bundle.macOS.signingIdentity`) — unsigned local builds work fine for
-development.
+**Building a distributable `.app`/`.dmg`:** the release build bundles the
+backend into the app as a self-contained sidecar (so end users don't need
+Python). Build it first, then run the Tauri build:
+
+```bash
+# 1. Freeze the backend into a single binary (PyInstaller)
+cd server && source venv/bin/activate && pip install pyinstaller
+pyinstaller --onefile --name aipulse-server \
+  --collect-all uvicorn --collect-all fastapi --collect-all zeroconf \
+  --collect-all browser_cookie3 --collect-all anyio \
+  --add-data "../dashboard/public/liquid-loop.mp4:." server.py
+
+# 2. Place it where Tauri expects the sidecar (name includes the target triple)
+cp dist/aipulse-server \
+  ../dashboard/src-tauri/binaries/aipulse-server-aarch64-apple-darwin
+
+# 3. Build the app
+cd ../dashboard && npm run tauri:build
+```
+
+Signing/notarizing requires your own Apple Developer identity (see
+`dashboard/src-tauri/tauri.conf.json` → `bundle.macOS.signingIdentity`;
+`entitlements.plist` carries `disable-library-validation`, which the
+PyInstaller sidecar needs to load its embedded Python under a hardened
+runtime). Unsigned local builds work fine for development.
 
 ## License
 
