@@ -226,13 +226,51 @@ def fetch_claude_usage_via_cookie():
     (含 five_hour / seven_day),失败返回 None。"""
     global _cached_claude_org_id, _c
 
-def _read_file_access_token():
-    """只读 ~/.claude/.credentials.json 里现成的 access_token(不刷新)。OAuth 兜底用。"""
+CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
+
+def _read_oauth_token():
+    """读现成的 Claude OAuth access_token(**只读,绝不刷新**)。同时看两处:
+    ~/.claude/.credentials.json 文件 和 macOS 钥匙串 —— 新版 Claude Code 把凭据
+    存进钥匙串、不再更新那个文件,所以只读文件会拿到过期 token。这里取两者中未过期
+    且最新的那个。绝不碰 refresh_token(和 CLI 抢一次性轮换会触发服务端吊销整条链)。"""
+    now = time.time()
+    best = None  # (token, expires_epoch_s)
+
+    def consider(raw):
+        nonlocal best
+        if not raw:
+            return
+        try:
+            o = (json.loads(raw).get("claudeAiOauth") or {})
+        except Exception:
+            return
+        at = o.get("accessToken")
+        if not at:
+            return
+        exp = o.get("expiresAt")
+        exp_s = (exp / 1000.0) if exp else 0.0
+        if best is None or exp_s > best[1]:
+            best = (at, exp_s)
+
+    # 源 1:凭据文件
     try:
-        o = (json.load(open(CLAUDE_CREDS_FILE)).get("claudeAiOauth") or {})
-        return o.get("accessToken")
+        with open(CLAUDE_CREDS_FILE) as f:
+            consider(f.read())
     except Exception:
+        pass
+    # 源 2:macOS 钥匙串(新版 CLI 存这里)
+    try:
+        raw = subprocess.check_output(
+            ["security", "find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-w"],
+            stderr=subprocess.DEVNULL, timeout=10).decode().strip()
+        consider(raw)
+    except Exception:
+        pass
+
+    if not best:
         return None
+    # 优先返回未过期的;都过期也返回最新那个(让 API 自己判 401,不在这儿武断丢弃)
+    return best[0]
 
 def fetch_claude_usage_resilient():
     """Claude 用量多源:优先浏览器 cookie(永不失效),失败退到现成 OAuth token
@@ -240,7 +278,7 @@ def fetch_claude_usage_resilient():
     u = fetch_claude_usage_via_cookie()
     if u:
         return u, "cookie"
-    tok = _read_file_access_token()
+    tok = _read_oauth_token()
     if tok:
         try:
             return fetch_claude_usage(tok), "oauth"
