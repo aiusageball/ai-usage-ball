@@ -407,7 +407,7 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true }) => {
   const radius = 65;
   const circumference = 2 * Math.PI * radius;
   const validPct = Math.max(0, Math.min(100, percentage));
@@ -546,6 +546,35 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
     return () => { if (rAFRef.current) cancelAnimationFrame(rAFRef.current); };
   }, []);
 
+  // 开场"灌满"动效:液体先自顾自从空到满涨一轮(和真实数据无关),看起来像是
+  // 一边涨一边在读后台数据;涨满之后,如果真实数据已经到了就直接用真实值——
+  // .video-blob 自带的 1.5s transition 会把它从"满"平滑收回到该有的高度;
+  // 真实数据还没到就先满着等,数据一到同样靠那个 transition 自然收回去。
+  const [introDone, setIntroDone] = useState(false);
+  const [introPct, setIntroPct] = useState(0);
+  const introRafRef = useRef(null);
+  const introStartRef = useRef(null);
+  const INTRO_MS = 1600;
+
+  useEffect(() => {
+    if (introDone) return;
+    const step = (ts) => {
+      if (introStartRef.current == null) introStartRef.current = ts;
+      const t = Math.min(1, (ts - introStartRef.current) / INTRO_MS);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic:起势快、到顶渐缓
+      setIntroPct(eased * 100);
+      if (t < 1) {
+        introRafRef.current = requestAnimationFrame(step);
+      } else {
+        setIntroDone(true);
+      }
+    };
+    introRafRef.current = requestAnimationFrame(step);
+    return () => { if (introRafRef.current) cancelAnimationFrame(introRafRef.current); };
+  }, [introDone]);
+
+  const liquidPct = !introDone ? introPct : (dataLoaded ? validPct : 100);
+
   const isExhausted = validPct <= 0;
 
   return (
@@ -598,9 +627,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
                 }, 3000);
               }}
               style={{
-                transform: `scale(${Math.max(0.01, validPct / 100)})`,
+                transform: `scale(${Math.max(0.01, liquidPct / 100)})`,
                 transformOrigin: 'center center',
-                opacity: Math.min(1, validPct / 8),
+                opacity: Math.min(1, liquidPct / 8),
                 filter: videoFilter
               }}
             />
@@ -742,6 +771,9 @@ function App() {
       reset_credits: null
     }
   });
+  // 是否已经从后端拿到过至少一次真实数据(用来判断开场灌满动效播完后,液体
+  // 是该先满着等,还是已经可以退回到真实高度了)。
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // Persistent Settings State
   const [dataSource, setDataSource] = useLocalStorage('aipulse_dataSource', 'codexbar');
@@ -882,6 +914,7 @@ function App() {
         try {
           const parsed = JSON.parse(event.data);
           setData(parsed);
+          setDataLoaded(true);
         } catch (e) {
           console.error("Error parsing event data", e);
         }
@@ -1008,6 +1041,7 @@ function App() {
             secondaryLabel="WEEKLY REMAINING"
             stackLabels={true}
             connected={connected}
+            dataLoaded={dataLoaded}
             ambientPulse={ambientOrb === 'claude'}
             onPopOut={() => launchWidget('claude')}
           />
@@ -1022,6 +1056,7 @@ function App() {
             label="CODEX" 
             primaryLabel="CODEX REMAINING"
             connected={connected}
+            dataLoaded={dataLoaded}
             resetCredits={data.codex.reset_credits}
             ambientPulse={ambientOrb === 'codex'}
             onPopOut={() => launchWidget('codex')}
@@ -1042,6 +1077,7 @@ function App() {
             secondaryLabel="CLAUDE REMAINING"
             stackLabels={true}
             connected={connected}
+            dataLoaded={dataLoaded}
             offline={data.antigravity.available === false}
             ambientPulse={ambientOrb === 'antigravity'}
             onPopOut={() => launchWidget('antigravity')}
