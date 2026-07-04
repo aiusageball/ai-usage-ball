@@ -554,6 +554,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   // 同时一起涨——每个球自己涨满仍是 INTRO_MS,只是起涨时间依次延后。
   const [introDone, setIntroDone] = useState(false);
   const [introPct, setIntroPct] = useState(0);
+  // 轮到这个球开始涨了没——没轮到之前连倒计时文字(READY 等)也先不露出来,
+  // 跟液体一样按 introOrder 从左到右依次出现,而不是三个一起"啪"地弹出来。
+  const [revealed, setRevealed] = useState(false);
   const introRafRef = useRef(null);
   const introStartRef = useRef(null);
   const INTRO_MS = 3000;
@@ -570,6 +573,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         introRafRef.current = requestAnimationFrame(step);
         return;
       }
+      setRevealed(true);
       const t = Math.min(1, localElapsed / INTRO_MS);
       const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic:起势快、到顶渐缓
       setIntroPct(eased * 100);
@@ -702,7 +706,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         </svg>
 
         {/* Digital Timer */}
-        <div className="orb-timer-wrapper">
+        <div className="orb-timer-wrapper" style={{ opacity: revealed ? 1 : 0 }}>
           <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
           {secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>{secondaryTimer}</span>
