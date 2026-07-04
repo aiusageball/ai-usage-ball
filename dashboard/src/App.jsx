@@ -587,9 +587,8 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   // 同时一起涨——每个球自己涨满仍是 INTRO_MS,只是起涨时间依次延后。
   const [introDone, setIntroDone] = useState(false);
   const [introPct, setIntroPct] = useState(0);
-  // 轮到这个球开始涨了没——没轮到之前连倒计时文字(READY 等)也先不露出来,
-  // 跟液体一样按 introOrder 从左到右依次出现,而不是三个一起"啪"地弹出来。
-  const [revealed, setRevealed] = useState(false);
+  // 轮到这个球开始涨了没(按 introOrder 从左到右错开)。
+  const [turnStarted, setTurnStarted] = useState(false);
   const introRafRef = useRef(null);
   const introStartRef = useRef(null);
   const INTRO_MS = 3000;
@@ -606,7 +605,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         introRafRef.current = requestAnimationFrame(step);
         return;
       }
-      setRevealed(true);
+      setTurnStarted(true);
       const t = Math.min(1, localElapsed / INTRO_MS);
       const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic:起势快、到顶渐缓
       setIntroPct(eased * 100);
@@ -621,11 +620,15 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   }, [introDone]);
 
   const liquidPct = !introDone ? introPct : (dataLoaded ? validPct : 100);
+  // 倒计时文字(READY/真实时间)要等两件事都发生才露出来:轮到这个球的开场
+  // 顺位、且真实数据已经到手。哪怕数据来得比顺位早,也照样按 introOrder 依次
+  // 露出来,不会三个一起"啪"地弹出——避免中途先闪一下 READY 占位字样。
+  const revealed = turnStarted && dataLoaded;
 
   const isExhausted = validPct <= 0;
 
   return (
-    <div className="orb-wrapper" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+    <div className="orb-wrapper orb-intro-appear" style={{ animationDelay: `${introDelay}ms` }} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       <div className={`orb-glass-breather ${offline ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
         <div
           className="orb-glass"
@@ -698,8 +701,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
             )}
           </defs>
           
-          {/* Track background */}
-          <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.55" strokeWidth="8" fill="none" />
+          {/* Track background (dimmed a lot more than the progress arc so
+              "used" vs "remaining" actually reads at a glance) */}
+          <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.16" strokeWidth="8" fill="none" />
           
           {/* Progress Ring */}
           <circle 
@@ -719,13 +723,12 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
           
           {hasSecondary ? (
             <>
-              <circle cx="100" cy="100" r={radiusSec} stroke={secondaryColor} opacity="0.5" strokeWidth="6" fill="none" />
-              <circle 
-                cx="100" cy="100" r={radiusSec} 
-                stroke={secondaryColor} 
-                strokeWidth="6" 
-                fill="none" 
-                opacity="0.5"
+              <circle cx="100" cy="100" r={radiusSec} stroke={secondaryColor} opacity="0.16" strokeWidth="6" fill="none" />
+              <circle
+                cx="100" cy="100" r={radiusSec}
+                stroke={secondaryColor}
+                strokeWidth="6"
+                fill="none"
                 strokeLinecap="round"
                 strokeDasharray={circumferenceSec}
                 strokeDashoffset={strokeDashoffsetSec}
@@ -789,6 +792,7 @@ function App() {
   const [data, setData] = useState({
     antigravity: {
       provider: "Antigravity",
+      loaded: false,
       rate_limit_pct: 0.0,
       rate_limit_pct_secondary: 0.0,
       status: "NORMAL",
@@ -800,6 +804,7 @@ function App() {
     },
     claude: {
       provider: "Claude",
+      loaded: false,
       rate_limit_pct: 0.0,
       rate_limit_pct_secondary: 0.0,
       status: "NORMAL",
@@ -811,6 +816,7 @@ function App() {
     },
     codex: {
       provider: "Codex",
+      loaded: false,
       rate_limit_pct: 0.0,
       status: "NORMAL",
       reset_time: "",
@@ -818,10 +824,6 @@ function App() {
       reset_credits: null
     }
   });
-  // 是否已经从后端拿到过至少一次真实数据(用来判断开场灌满动效播完后,液体
-  // 是该先满着等,还是已经可以退回到真实高度了)。
-  const [dataLoaded, setDataLoaded] = useState(false);
-
   // Persistent Settings State
   const [dataSource, setDataSource] = useLocalStorage('aipulse_dataSource', 'codexbar');
   const [alertThreshold, setAlertThreshold] = useLocalStorage('aipulse_alertThreshold', 20);
@@ -1035,7 +1037,6 @@ function App() {
         try {
           const parsed = JSON.parse(event.data);
           setData(parsed);
-          setDataLoaded(true);
         } catch (e) {
           console.error("Error parsing event data", e);
         }
@@ -1165,7 +1166,7 @@ function App() {
             secondaryLabel="WEEKLY REMAINING"
             stackLabels={true}
             connected={connected}
-            dataLoaded={dataLoaded}
+            dataLoaded={!!data.claude.loaded}
             introOrder={0}
             ambientPulse={ambientOrb === 'claude'}
             onPopOut={() => launchWidget('claude')}
@@ -1181,7 +1182,7 @@ function App() {
             label="CODEX" 
             primaryLabel="CODEX REMAINING"
             connected={connected}
-            dataLoaded={dataLoaded}
+            dataLoaded={!!data.codex.loaded}
             introOrder={1}
             resetCredits={data.codex.reset_credits}
             ambientPulse={ambientOrb === 'codex'}
@@ -1203,7 +1204,7 @@ function App() {
             secondaryLabel="CLAUDE REMAINING"
             stackLabels={true}
             connected={connected}
-            dataLoaded={dataLoaded}
+            dataLoaded={!!data.antigravity.loaded}
             introOrder={2}
             offline={data.antigravity.available === false}
             ambientPulse={ambientOrb === 'antigravity'}

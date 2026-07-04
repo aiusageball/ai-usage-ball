@@ -100,6 +100,7 @@ state = {
     "antigravity": {
         "provider": "Antigravity",
         "available": None,   # None = 尚未探测(前端不显示灰);探测后置 True/False
+        "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
@@ -112,6 +113,7 @@ state = {
     },
     "claude": {
         "provider": "Claude",
+        "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
@@ -126,6 +128,7 @@ state = {
     },
     "codex": {
         "provider": "Codex",
+        "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
         "rate_limit_pct": 0.0,
         "status": "NORMAL",
         "reset_time": "",
@@ -373,6 +376,7 @@ async def poll_claude_oauth():
 
             _claude_last_ok = time.time()
             fail_count = 0
+            state["claude"]["loaded"] = True
             state["claude"]["stale"] = False
             state["claude"]["tokenExpired"] = False
             state["claude"]["updatedAt"] = datetime.now(timezone.utc).isoformat()
@@ -429,6 +433,7 @@ async def poll_codex_oauth():
                 # "限额重置券"剩余张数(撞限额时可立刻重置额度)
                 reset_credits = (usage.get("rate_limit_reset_credits") or {}).get("available_count")
 
+                state["codex"]["loaded"] = True
                 state["codex"]["rate_limit_pct"] = pri_used
                 state["codex"]["reset_credits"] = reset_credits
                 state["codex"]["resetsAt"] = (
@@ -574,6 +579,7 @@ async def poll_antigravity_local():
                 gemini = _ag_worst(models, "gemini")
                 claude = _ag_worst(models, "claude")
                 state["antigravity"]["available"] = True
+                state["antigravity"]["loaded"] = True
 
                 # Third orb: primary ring = "GEMINI REMAINING" (secondary fields),
                 # secondary ring = "CLAUDE REMAINING" (primary fields). See App.jsx.
