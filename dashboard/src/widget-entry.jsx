@@ -84,17 +84,22 @@ const ORB_CONFIG = {
 };
 
 /* ── DualRingOrb (self-contained copy for widget isolation) ── */
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, offline = false, resetCredits = null }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, offline = false, resetCredits = null, dataLoaded = true }) => {
   const radius = 65;
   const circumference = 2 * Math.PI * radius;
   const validPct = Math.max(0, Math.min(100, percentage));
-  const strokeDashoffset = circumference - (circumference * validPct) / 100;
 
   const hasSecondary = secondaryPercentage !== undefined;
   const radiusSec = 47;
   const circumferenceSec = 2 * Math.PI * radiusSec;
   const validPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
-  const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * validPctSec) / 100;
+
+  // 弹出 widget 时如果还没拿到真实数据(percentage 默认按 100% 算),环先保持
+  // "空"而不是显示成满环再猛地跳到真实值——跟主界面同一个道理(见 App.jsx)。
+  const ringPct = dataLoaded ? validPct : 0;
+  const ringPctSec = dataLoaded ? validPctSec : 0;
+  const strokeDashoffset = circumference - (circumference * ringPct) / 100;
+  const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
 
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
@@ -342,9 +347,9 @@ function WidgetApp() {
   const config = ORB_CONFIG[orbType] || ORB_CONFIG.claude;
 
   const [data, setData] = useState({
-    antigravity: { rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
-    claude: { rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
-    codex: { rate_limit_pct: 0, resetsAt: '' },
+    antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
+    claude: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
+    codex: { loaded: false, rate_limit_pct: 0, resetsAt: '' },
   });
   const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00' });
 
@@ -453,6 +458,7 @@ function WidgetApp() {
         secondaryLabel={config.secondaryLabel}
         stackLabels={config.stackLabels}
         connected={true}
+        dataLoaded={!!data[orbType].loaded}
         resetCredits={orbType === 'codex' && data.codex ? data.codex.reset_credits : null}
         offline={orbType === 'antigravity' && data.antigravity && data.antigravity.available === false}
       />

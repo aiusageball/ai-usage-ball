@@ -624,6 +624,15 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   // 顺位、且真实数据已经到手。哪怕数据来得比顺位早,也照样按 introOrder 依次
   // 露出来,不会三个一起"啪"地弹出——避免中途先闪一下 READY 占位字样。
   const revealed = turnStarted && dataLoaded;
+  // 光环在真实数据到手前保持"空"(而不是默认的 100% 满环)——默认状态
+  // rate_limit_pct=0 会让 percentage 算成 100,环一开始就是满的;数据一到,
+  // stroke-dashoffset 的 1s CSS transition 会让它从"满"猛地转一大圈扫到真实
+  // 百分比,看起来像开场转了一圈。改成数据到手前就是空环,数据一到才从空转
+  // 到真实值,方向和液体的"从空到满"一致,也不会有那种突兀的满环写扫。
+  const ringPct = revealed ? validPct : 0;
+  const ringPctSec = revealed ? validPctSec : 0;
+  const displayStrokeDashoffset = circumference - (circumference * ringPct) / 100;
+  const displayStrokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
 
   const isExhausted = validPct <= 0;
 
@@ -713,7 +722,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
             fill="none" 
             strokeLinecap="round"
             strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
+            strokeDashoffset={displayStrokeDashoffset}
             transform="rotate(-90 100 100)"
             filter={`url(#glow-${label.replace(/\s+/g, '-')})`}
           />
@@ -731,7 +740,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
                 fill="none"
                 strokeLinecap="round"
                 strokeDasharray={circumferenceSec}
-                strokeDashoffset={strokeDashoffsetSec}
+                strokeDashoffset={displayStrokeDashoffsetSec}
                 transform="rotate(-90 100 100)"
                 filter={`url(#glow-sec-${label.replace(/\s+/g, '-')})`}
               />
