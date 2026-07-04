@@ -31,8 +31,8 @@ async def lifespan(app: FastAPI):
     finally:
         s.close()
         
-    try:
-        info = ServiceInfo(
+    def _register_zeroconf():
+        info_ = ServiceInfo(
             "_aipulse._tcp.local.",
             "AIPulse Server._aipulse._tcp.local.",
             addresses=[socket.inet_aton(ip)],
@@ -40,11 +40,22 @@ async def lifespan(app: FastAPI):
             properties={'desc': 'AI Pulse Local Server'},
             server="aipulseserver.local.",
         )
-        zeroconf_instance = Zeroconf()
-        zeroconf_instance.register_service(info)
+        zc = Zeroconf()
+        zc.register_service(info_)
+        return zc, info_
+
+    # Register in a worker thread with a hard timeout. In a PyInstaller-frozen
+    # build, Zeroconf's network-interface probing can hang and would otherwise
+    # block uvicorn's startup forever (stuck at "Waiting for application
+    # startup"), so the whole server never starts serving. Watch discovery is
+    # optional — if it can't come up in a few seconds, skip it and boot anyway.
+    try:
+        zeroconf_instance, info = await asyncio.wait_for(
+            asyncio.to_thread(_register_zeroconf), timeout=5.0)
         print(f"ZeroConf broadcasting AIPulse Server on {ip}:8000")
     except Exception as e:
-        print(f"Failed to start ZeroConf: {e}")
+        print(f"ZeroConf skipped ({e}); Apple Watch discovery disabled")
+        zeroconf_instance, info = None, None
 
     # Real-data pollers: Claude usage via Anthropic OAuth (direct, no CodexBar);
     # Codex/Antigravity still via CodexBar CLI for now.
@@ -224,7 +235,30 @@ _cached_claude_org_id = None
 def fetch_claude_usage_via_cookie():
     """用 sessionKey 调 claude.ai usage API,返回与 OAuth usage 同构的 dict
     (含 five_hour / seven_day),失败返回 None。"""
-    global _cached_claude_org_id, _c
+    global _cached_claude_org_id, _cached_claude_sessionkey
+    session_key = _get_claude_sessionkey()
+    if not session_key:
+        return None
+    headers = {"Cookie": f"sessionKey={session_key}", "User-Agent": _CLAUDE_WEB_UA}
+
+    def _get(url):
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+
+    try:
+        if not _cached_claude_org_id:
+            orgs = _get("https://claude.ai/api/organizations")
+            if not orgs:
+                return None
+            _cached_claude_org_id = orgs[0]["uuid"]
+        return _get(f"https://claude.ai/api/organizations/{_cached_claude_org_id}/usage")
+    except Exception as e:
+        # session 过期(401/403)—— 清缓存,下次重新从浏览器读 cookie + 重新拿 org_id
+        if getattr(e, "code", None) in (401, 403):
+            _cached_claude_sessionkey = None
+            _cached_claude_org_id = None
+        return None
 
 CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
 
