@@ -147,6 +147,10 @@ def safe_pct(value) -> float:
 _claude_last_ok = 0.0
 # How long without a successful poll before we mark Claude data as stale.
 CLAUDE_STALE_AFTER_SEC = 180
+# Consecutive failures allowed the fast (5s) retry before falling back to the
+# normal 60s cadence — bounds how long a genuinely-broken state (not logged
+# into claude.ai, no OAuth token) keeps retrying quickly.
+CLAUDE_FAST_RETRY_MAX = 6
 
 def _iso_in_past(iso_str: str) -> bool:
     """True if `iso_str` is a valid timestamp that is already in the past (UTC)."""
@@ -334,9 +338,14 @@ def _log_claude(msg, dedup=False):
 async def poll_claude_oauth():
     """Claude 用量轮询:cookie 为主源(对标 CodexBar,永不失效),OAuth token 只读兜底。
     不再自己刷新 OAuth token —— 那会和 Claude CLI 抢一次性轮换的 refresh_token、触发服务端
-    把整条链吊销(之前 token 反复失效就是这么来的)。刷新交还给 CLI;cookie 不受影响。"""
+    把整条链吊销(之前 token 反复失效就是这么来的)。刷新交还给 CLI;cookie 不受影响。
+    失败重试用短间隔(而不是跟成功一样的 60s)—— 冷启动时第一次读经常因为浏览器/
+    钥匙串还没就绪而失败,如果失败也等 60s,首次显示真实数据就要接近一分钟。只在
+    最初几次失败时快速重试;如果是真的长期拿不到(没登录 claude.ai),连续失败
+    次数超过 CLAUDE_FAST_RETRY_MAX 后退回 60s 节奏,避免一直高频重试。"""
     global _claude_last_ok
     print("Starting Claude usage polling (cookie-first, OAuth fallback)...")
+    fail_count = 0
     while True:
         try:
             usage, source = await asyncio.to_thread(fetch_claude_usage_resilient)
@@ -345,7 +354,8 @@ async def poll_claude_oauth():
                 if _claude_last_ok and time.time() - _claude_last_ok > CLAUDE_STALE_AFTER_SEC:
                     state["claude"]["stale"] = True
                 _log_claude("⚠ 取不到用量 — 请在浏览器登录 claude.ai", dedup=True)
-                await asyncio.sleep(60.0)
+                fail_count += 1
+                await asyncio.sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
                 continue
 
             fh = usage.get("five_hour") or {}
@@ -362,6 +372,7 @@ async def poll_claude_oauth():
             state["claude"]["status_secondary"] = "EXHAUSTED" if sd_util >= 100 else "NORMAL"
 
             _claude_last_ok = time.time()
+            fail_count = 0
             state["claude"]["stale"] = False
             state["claude"]["tokenExpired"] = False
             state["claude"]["updatedAt"] = datetime.now(timezone.utc).isoformat()
@@ -370,7 +381,8 @@ async def poll_claude_oauth():
             await asyncio.sleep(60.0)  # usage changes slowly; once a minute is plenty
         except Exception as e:
             print(f"Error polling Claude usage: {e}")
-            await asyncio.sleep(60.0)
+            fail_count += 1
+            await asyncio.sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
 
 # ── Codex/ChatGPT: real usage from chatgpt.com backend (reuse Codex CLI auth) ──
 CODEX_HOME = os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex"))
@@ -468,8 +480,15 @@ def find_antigravity_server():
 
 def _ag_listen_ports(pid):
     try:
+        # -a ANDs the filters together (lsof's default is OR!) — without it,
+        # "-p <pid> -iTCP -sTCP:LISTEN" returns every listening port on the
+        # whole machine (matches -iTCP -sTCP:LISTEN alone), not just this
+        # pid's. That silently turned this into a scan of 15-20+ unrelated
+        # ports (ControlCenter, node, Chrome, Ollama, ...) before reaching
+        # the real one, each a wasted ~connect attempt — the actual cause of
+        # the multi-second-to-20s delay before Antigravity showed real data.
         out = subprocess.run(
-            ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-p", str(pid)],
+            ["lsof", "-a", "-p", str(pid), "-nP", "-iTCP", "-sTCP:LISTEN"],
             capture_output=True, text=True, timeout=10,
         ).stdout
     except Exception:
@@ -531,9 +550,16 @@ def _ag_worst(models, keyword):
                 best = (frac, q.get("resetTime") or "")
     return best
 
+ANTIGRAVITY_FAST_RETRY_MAX = 6  # 同上,连续失败超过这么多次就退回 20s 节奏
+
 async def poll_antigravity_local():
+    """失败重试用短间隔而不是跟成功一样的 20s —— 冷启动时第一次探测常因为
+    language_server 的 ps/端口列表还没就绪而落空,如果失败也等 20s,首次
+    显示真实数据就要接近 20 秒(实测正是如此)。"""
     print("Starting Antigravity usage polling (local language server)...")
+    fail_count = 0
     while True:
+        ok = False
         try:
             status = await asyncio.to_thread(fetch_antigravity_status)
             if not status:
@@ -542,6 +568,7 @@ async def poll_antigravity_local():
                 state["antigravity"]["status"] = "OFFLINE"
                 state["antigravity"]["status_secondary"] = "OFFLINE"
             else:
+                ok = True
                 us = status.get("userStatus") or {}
                 models = ((us.get("cascadeModelConfigData") or {}).get("clientModelConfigs")) or []
                 gemini = _ag_worst(models, "gemini")
@@ -572,7 +599,8 @@ async def poll_antigravity_local():
         except Exception as e:
             print(f"Error polling Antigravity: {e}")
             state["antigravity"]["available"] = False
-        await asyncio.sleep(20.0)
+        fail_count = 0 if ok else fail_count + 1
+        await asyncio.sleep(20.0 if (ok or fail_count > ANTIGRAVITY_FAST_RETRY_MAX) else 3.0)
 
 _VIDEO_CANDIDATES = [
     os.path.join(os.path.dirname(__file__), "liquid-loop.mp4"),  # sibling copy (e.g. App Support)
