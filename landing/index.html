@@ -344,6 +344,9 @@
     <div class="cta-row">
       <a href="https://github.com/aiusageball/ai-usage-ball/releases/download/v0.1.0/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Download for macOS</a>
     </div>
+    <div class="dl-count-container" style="font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 12px; margin-bottom: 24px; display: none;">
+      🚀 Downloaded <span class="dl-count-number" style="font-weight: 600; color: #fff;">...</span> times by macOS users
+    </div>
     <div class="privacy">🔒 Reads usage locally · nothing leaves your Mac</div>
   </div>
 </section>
@@ -352,7 +355,7 @@
   <div class="wrap">
     <div class="logo"><span class="dot"></span> AI Usage Ball</div>
     <div>Your AI limits, always in sight.</div>
-    <div style="margin-top:14px">© 2026 AI Usage Ball · <a href="#" style="color:var(--muted);text-decoration:underline">Privacy</a> · <a href="#" onclick="openContact();return false" style="color:var(--muted);text-decoration:underline">Contact</a></div>
+    <div style="margin-top:14px">© 2026 AI Usage Ball · <a href="terms.html" style="color:var(--muted);text-decoration:underline">Terms</a> · <a href="privacy.html" style="color:var(--muted);text-decoration:underline">Privacy</a> · <a href="#" onclick="openContact();return false" style="color:var(--muted);text-decoration:underline">Contact</a></div>
   </div>
 </footer>
 
@@ -436,7 +439,23 @@
       .finally(function(){ btn.disabled = false; });
     return false;
   }
-</script>
 
+  // ── Fetch GitHub Download Count
+  fetch('https://api.github.com/repos/aiusageball/ai-usage-ball/releases')
+    .then(r => r.json())
+    .then(data => {
+      let total = 0;
+      data.forEach(release => {
+        release.assets.forEach(asset => {
+          total += asset.download_count || 0;
+        });
+      });
+      if (total > 0) {
+        document.querySelectorAll('.dl-count-number').forEach(el => el.textContent = total);
+        document.querySelectorAll('.dl-count-container').forEach(el => el.style.display = 'block');
+      }
+    })
+    .catch(e => console.error('Failed to fetch download count:', e));
+</script>
 </body>
 </html>
