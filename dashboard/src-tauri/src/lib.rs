@@ -79,46 +79,47 @@ fn secure_set(key: String, value: String) -> Result<(), String> {
 /// Start the FastAPI backend that the frontend connects to on 127.0.0.1:8000.
 ///
 /// Order of preference:
-///  1. The self-contained sidecar binary bundled inside the app
-///     (Contents/MacOS/aipulse-server) — this is what ships to end users; the
-///     whole Python backend is frozen into it by PyInstaller, so no Python
-///     install or venv is required on their machine.
+///  1. The self-contained sidecar bundled as an app **resource**
+///     (Contents/Resources/aipulse-server/aipulse-server) — this is what ships
+///     to end users. It's a PyInstaller **onedir** build, not onefile: the
+///     whole Python backend is frozen into a folder that's already unpacked
+///     at build time. A onefile build has to re-extract itself (~50MB) to a
+///     fresh temp dir on EVERY launch — measured ~10-13s per launch, every
+///     single time. onedir needs no extraction: measured ~2s standalone.
 ///  2. A venv + server.py under ~/Library/Application Support (dev machines
 ///     that set this up), overridable via AIPULSE_PYTHON / AIPULSE_SERVER.
 ///  3. The repo's server/venv (running from a source checkout).
-fn spawn_backend() -> Option<Child> {
+fn spawn_backend(app: &tauri::App) -> Option<Child> {
     // Sweep up any backend left over from a previous run (crash, or an older
     // version that didn't group-kill). A stale instance keeps port 8000 bound,
     // which would silently prevent this launch's backend from starting and
     // leave the orbs frozen on old data.
     let _ = Command::new("pkill")
-        .args(["-f", "Contents/MacOS/aipulse-server"])
+        .args(["-f", "aipulse-server/aipulse-server"])
         .status();
 
     let quiet = |mut cmd: Command| {
         // Discard stdout/stderr — an inherited, unread pipe can fill up and
         // stall the server before it finishes binding the port.
         // process_group(0): run the backend in its own process group (pgid =
-        // child pid) so kill_backend can take out the PyInstaller bootloader
-        // AND the real server it spawns with a single group-kill.
+        // child pid) so kill_backend can take out the whole tree with one
+        // group-kill (the server may itself spawn helper subprocesses).
         cmd.stdout(Stdio::null())
             .stderr(Stdio::null())
             .process_group(0)
             .spawn()
     };
 
-    // 1) Bundled sidecar: sits next to the main app binary in Contents/MacOS.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sidecar = dir.join("aipulse-server");
-            if sidecar.exists() {
-                match quiet(Command::new(&sidecar)) {
-                    Ok(child) => {
-                        println!("Started bundled AI Usage Ball backend (pid {})", child.id());
-                        return Some(child);
-                    }
-                    Err(e) => eprintln!("Failed to start bundled backend: {e}"),
+    // 1) Bundled sidecar resource: Contents/Resources/aipulse-server/aipulse-server.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let sidecar = resource_dir.join("backend").join("aipulse-server");
+        if sidecar.exists() {
+            match quiet(Command::new(&sidecar)) {
+                Ok(child) => {
+                    println!("Started bundled AI Usage Ball backend (pid {})", child.id());
+                    return Some(child);
                 }
+                Err(e) => eprintln!("Failed to start bundled backend: {e}"),
             }
         }
     }
@@ -172,7 +173,8 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            app.manage(BackendProcess(Mutex::new(spawn_backend())));
+            let backend = spawn_backend(app);
+            app.manage(BackendProcess(Mutex::new(backend)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![open_provider_app, secure_get, secure_set])
