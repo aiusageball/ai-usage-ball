@@ -60,6 +60,7 @@ export const PHYS = {
   STORM_SPAWN0: 1.8,     // 初始生成间隔 s
   STORM_SPAWN_MIN: 0.45, // 最快生成间隔 s
   STORM_RAMP: 40,        // 生成间隔收紧时间常数 s
+  STORM_LIVES: 5,        // 第三关命数:漏掉这么多个球直接输(分数再高也没用)
 };
 
 // 三种颜色(与主界面的三颗水晶球对应)
@@ -80,7 +81,7 @@ const G = {
   score: 0,
   bgAlpha: 0, matchT: 0, spawnIn: 0,
   rainT: 0, fallV: 0,
-  stormT: 0, stormV: 0,
+  stormT: 0, stormV: 0, stormLives: 0,
   keys: new Set(), drag: null,
   suppressClick: false,
   audio: null,
@@ -515,7 +516,10 @@ function render() {
   const inGamePhase = G.stateName === 'match' || G.stateName === 'rainmatch' || G.stateName === 'storm' || G.stateName === 'over';
   if (G.score !== 0 || inGamePhase) {
     if (G.scoreEl) {
-      G.scoreEl.textContent = String(G.score);
+      // 第三关在分数旁边显示剩余命数(♥),漏一个少一颗
+      G.scoreEl.textContent = G.stateName === 'storm'
+        ? `${G.score} ${'♥'.repeat(Math.max(0, G.stormLives))}`
+        : String(G.score);
       G.scoreEl.style.display = 'flex';
       const baseClass = inGamePhase ? 'egg-score-center' : 'egg-score-corner';
       const negativeClass = G.score < 0 ? ' negative' : '';
@@ -839,6 +843,7 @@ register('storm', {
   enter() {
     G.stormT = 0; G.spawnIn = 0.6;
     G.stormV = PHYS.STORM_V0;
+    G.stormLives = PHYS.STORM_LIVES;
     G.holdActive = false;
     // 清掉第二关残留的球雨
     clearOrbs();
@@ -884,10 +889,14 @@ register('storm', {
         const gone = o.x < -o.r * 3 || o.x > G.W + o.r * 3 ||
                      o.y < -o.r * 3 || o.y > G.H + o.r * 3;
         if (o.entered && gone) {
-          // 穿场而过没被拦下 → 漏 1 分
+          // 穿场而过没被拦下 → 漏 1 分 + 折 1 条命。命才是第三关真正的输法:
+          // 进关时带着 200 分,靠扣分输要漏 200 个球,等于没有失败压力;
+          // 命数上限把"漏球"变回有代价的事。
           removeOrb(o);
-          G.score -= 1; sfx.miss();
-          if (G.score <= 0) { switchState('over'); return; }
+          G.score -= 1;
+          G.stormLives -= 1;
+          sfx.miss();
+          if (G.stormLives <= 0 || G.score <= 0) { switchState('over'); return; }
         }
       } else {
         // 被碰过的球:四壁都弹,加阻力慢慢停(不会再离场)
@@ -921,11 +930,16 @@ register('storm', {
       }
     }
 
-    // 流星球之间:同色消除,异色弹开(双方都被"拦下")
+    // 流星球之间:同色消除,异色弹开(双方都被"拦下")。
+    // 两颗都没被碰过的飞入球互相穿过、不发生任何作用 —— 所有球都瞄着
+    // 中央区域飞,半路互撞的概率极高,若放任它们自动同色消除,玩家什么都
+    // 不做分数也会自己往上涨(实测 25 秒白拿 90+ 分,差点躺赢);也避免
+    // 未拦截球互相弹飞后出界、让玩家背没碰过的锅。
     const alive = G.orbs.filter(o => !o.dead);
     for (let i = 0; i < alive.length; i++) {
       for (let j = i + 1; j < alive.length; j++) {
         const a = alive[i], b = alive[j];
+        if (a.incoming && b.incoming) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.hypot(dx, dy), minD = a.r + b.r;
         if (dist > 0 && dist < minD) {
