@@ -122,6 +122,8 @@ const SettingsModal = ({
   launchAtLogin, setLaunchAtLogin,
   showInDock, setShowInDock,
   theme, setTheme,
+  autoUpdate, setAutoUpdate,
+  updateState, updateInfo, updateProgress, onCheckForUpdates, onRestartNow,
   licensed, daysLeft, onActivate, checkoutUrl
 }) => {
   const [activeTab, setActiveTab] = useState('account');
@@ -390,8 +392,39 @@ const SettingsModal = ({
               </div>
 
               <div className="setting-section">
+                <h3 className="section-title">Updates</h3>
+                <div className="checkbox-group">
+                  <label className="checkbox-option">
+                    <input type="checkbox" checked={autoUpdate} onChange={(e) => setAutoUpdate(e.target.checked)} />
+                    <span>Automatically check for and install updates</span>
+                  </label>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                  <button
+                    className="ando-btn"
+                    disabled={updateState === 'checking' || updateState === 'downloading'}
+                    onClick={() => onCheckForUpdates(true)}
+                  >
+                    {updateState === 'checking' ? 'CHECKING…' : updateState === 'downloading' ? 'DOWNLOADING…' : 'CHECK FOR UPDATES'}
+                  </button>
+                  {updateState === 'ready' && (
+                    <button className="ando-btn" onClick={onRestartNow}>RESTART NOW</button>
+                  )}
+                </div>
+                <p className="section-desc" style={{ marginTop: '8px' }}>
+                  {updateState === 'idle' && 'Not checked yet this session.'}
+                  {updateState === 'checking' && 'Checking for updates…'}
+                  {updateState === 'uptodate' && "You're up to date."}
+                  {updateState === 'available' && updateInfo && `Update ${updateInfo.version} available — downloading…`}
+                  {updateState === 'downloading' && `Downloading update… ${updateProgress}%`}
+                  {updateState === 'ready' && updateInfo && `Update ${updateInfo.version} downloaded — restart to apply.`}
+                  {updateState === 'error' && "Couldn't check for updates — try again later."}
+                </p>
+              </div>
+
+              <div className="setting-section">
                 <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Pulse v0.1.0</p>
+                <p className="section-desc">AI Usage Ball v0.1.0</p>
                 <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
               </div>
 
@@ -796,6 +829,80 @@ function App() {
   const [launchAtLogin, setLaunchAtLogin] = useLocalStorage('aipulse_launchAtLogin', true);
   const [showInDock, setShowInDock] = useLocalStorage('aipulse_showInDock', false);
   const [theme, setTheme] = useLocalStorage('aipulse_theme', 'dark');
+  const [autoUpdate, setAutoUpdate] = useLocalStorage('aipulse_autoUpdate', true);
+
+  // ── Auto-update (Tauri updater plugin) ──
+  // idle | checking | uptodate | available | downloading | ready | error
+  const [updateState, setUpdateState] = useState('idle');
+  const [updateInfo, setUpdateInfo] = useState(null);       // { version, notes }
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const pendingUpdateRef = useRef(null);                    // holds the Update object between check() and install
+  const autoUpdateRef = useRef(autoUpdate);
+  useEffect(() => { autoUpdateRef.current = autoUpdate; }, [autoUpdate]);
+
+  const installUpdate = async () => {
+    const update = pendingUpdateRef.current;
+    if (!update) return;
+    setUpdateState('downloading');
+    setUpdateProgress(0);
+    try {
+      let total = 0, received = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started') {
+          total = event.data.contentLength || 0;
+        } else if (event.event === 'Progress') {
+          received += event.data.chunkLength;
+          setUpdateProgress(total ? Math.min(100, Math.round((received / total) * 100)) : 0);
+        } else if (event.event === 'Finished') {
+          setUpdateProgress(100);
+        }
+      });
+      setUpdateState('ready');
+    } catch (e) {
+      console.error('Update install failed:', e);
+      setUpdateState('error');
+    }
+  };
+
+  // manual=true → user clicked "Check for Updates" (always download if found);
+  // manual=false → silent startup check (only auto-downloads if the setting is on).
+  const checkForUpdates = async (manual = false) => {
+    if (updateState === 'checking' || updateState === 'downloading') return;
+    setUpdateState('checking');
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (!update) {
+        setUpdateState('uptodate');
+        return;
+      }
+      pendingUpdateRef.current = update;
+      setUpdateInfo({ version: update.version, notes: update.body });
+      setUpdateState('available');
+      if (manual || autoUpdateRef.current) {
+        await installUpdate();
+      }
+    } catch (e) {
+      console.error('Update check failed:', e);
+      setUpdateState('error');
+    }
+  };
+
+  const restartNow = async () => {
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+    } catch (e) {
+      console.error('Restart failed:', e);
+    }
+  };
+
+  // Silent check shortly after launch — only acts (downloads) if autoUpdate is on;
+  // otherwise it just surfaces "available" so the Settings panel can show it.
+  useEffect(() => {
+    const t = setTimeout(() => { checkForUpdates(false); }, 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   // ── Free trial / license (state lives in the macOS Keychain, see lib.rs) ──
   const [trialStart, setTrialStart] = useState(null);   // epoch seconds, or null until loaded
@@ -1002,6 +1109,9 @@ function App() {
           launchAtLogin={launchAtLogin} setLaunchAtLogin={setLaunchAtLogin}
           showInDock={showInDock} setShowInDock={setShowInDock}
           theme={theme} setTheme={setTheme}
+          autoUpdate={autoUpdate} setAutoUpdate={setAutoUpdate}
+          updateState={updateState} updateInfo={updateInfo} updateProgress={updateProgress}
+          onCheckForUpdates={checkForUpdates} onRestartNow={restartNow}
           licensed={isLicensed} daysLeft={daysLeft}
           onActivate={activateLicense}
           checkoutUrl={CHECKOUT_TRIAL}

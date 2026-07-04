@@ -18,10 +18,20 @@
 # dylibs the way `externalBin` sidecars do, so every Mach-O file under the
 # bundled backend resource folder needs an explicit codesign pass too.
 #
+# Also produces the auto-updater artifacts: `AI Usage Ball.app.tar.gz` +
+# `.sig` (signed with the updater keypair, separate from the Developer ID
+# cert) and a `latest.json` manifest. tauri.conf.json's plugins.updater
+# endpoint points at
+# https://github.com/aiusageball/ai-usage-ball/releases/latest/download/latest.json
+# — so every release upload MUST include latest.json and the .app.tar.gz
+# alongside the .dmg, or existing installs will never see the new version.
+#
 # Usage: scripts/build_release.sh
 # Requires: APPLE_ID, APPLE_TEAM_ID env vars set; Developer ID cert in
 # Keychain; notary password stored via `xcrun notarytool store-credentials`
-# OR in Keychain under service "Notary" (see NOTARY_PW below).
+# OR in Keychain under service "Notary" (see NOTARY_PW below); updater
+# signing key at ~/Library/Application Support/AIPulse/aiusageball_updater.key
+# with its password in Keychain under service "AIUsageBall-UpdaterKey".
 
 set -euo pipefail
 
@@ -33,6 +43,9 @@ ENTITLEMENTS="$SRC_TAURI/entitlements.plist"
 APPLE_ID="${APPLE_ID:-xbyxy@msn.com}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-46C3XZQNFT}"
 NOTARY_PW="$(security find-generic-password -s 'Notary' -w)"
+export TAURI_SIGNING_PRIVATE_KEY="$HOME/Library/Application Support/AIPulse/aiusageball_updater.key"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s 'AIUsageBall-UpdaterKey' -w)"
+APP_VERSION="$(node -p "require('$SRC_TAURI/tauri.conf.json').version")"
 
 echo "==> 1/6 Rebuilding the PyInstaller onedir backend sidecar"
 SERVER_DIR="$REPO_ROOT/server"
@@ -99,4 +112,29 @@ rm -f "$DMG"
 hdiutil create -volname "AI Usage Ball" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 
-echo "Done: $DMG"
+echo "==> Generating latest.json (updater manifest)"
+TARBALL="$SRC_TAURI/target/release/bundle/macos/AI Usage Ball.app.tar.gz"
+SIGNATURE="$(cat "$TARBALL.sig")"
+PUB_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+LATEST_JSON="$SRC_TAURI/target/release/bundle/latest.json"
+cat > "$LATEST_JSON" <<EOF
+{
+  "version": "$APP_VERSION",
+  "notes": "See https://github.com/aiusageball/ai-usage-ball/releases/tag/v$APP_VERSION",
+  "pub_date": "$PUB_DATE",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "$SIGNATURE",
+      "url": "https://github.com/aiusageball/ai-usage-ball/releases/download/v$APP_VERSION/AI.Usage.Ball.app.tar.gz"
+    }
+  }
+}
+EOF
+
+echo "Done."
+echo "  DMG:         $DMG"
+echo "  Updater tgz: $TARBALL"
+echo "  Manifest:    $LATEST_JSON"
+echo ""
+echo "To ship the update, upload ALL THREE to the GitHub release (renaming the tarball to match the URL above, spaces -> dots):"
+echo "  gh release upload v$APP_VERSION \"$DMG\" \"$TARBALL#AI.Usage.Ball.app.tar.gz\" \"$LATEST_JSON\" --clobber"
