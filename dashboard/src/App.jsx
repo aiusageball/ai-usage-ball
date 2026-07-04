@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { eggBeginDrag, eggConsumeClickSuppress } from './easterEgg';
 import './App.css';
 
 const TRIAL_DAYS = 30;
 // Lemon Squeezy checkout 链接 + 产品/变体 ID(验证 license 归属)。
 // 双价:试用期内带折扣码 A$5.99,到期原价 A$9.99。
-// ⚠️ 折扣码还没建,CHECKOUT_TRIAL 暂时同原价;建好减$4折扣码后改成带 ?checkout[discount_code]=CODE。
+// ⚠️ 这些是 Lemon Squeezy 测试模式(Test mode)的值 —— 店铺审核通过、切到 Live mode、
+// 产品 Copy to Live Mode 后,checkout 链接/两个 ID/折扣码都会变成全新的,到时候要整套换掉。
 const LS_BUY = 'https://aiusageball.lemonsqueezy.com/checkout/buy/746df40e-c7a7-4fda-9481-d98cfdf39e8e';
-const CHECKOUT_TRIAL = LS_BUY; // TODO: 折扣码建好后 → `${LS_BUY}?checkout[discount_code]=CODE`
-const CHECKOUT_FULL  = LS_BUY;
+const CHECKOUT_TRIAL = `${LS_BUY}?checkout[discount_code]=TRIAL`; // 试用期内 A$5.99(TRIAL 折扣码)
+const CHECKOUT_FULL  = LS_BUY;                                     // 到期原价 A$9.99
 const LS_PRODUCT_IDS = [1185289, 1853633]; // product_id / variant_id —— 验证 license 确属本产品
 
 // Tauri v2 WebviewWindow API for creating widget windows
@@ -420,6 +422,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
   const loadedOnceRef = useRef(false);
+  const orbGlassRef = useRef(null);   // 彩蛋:无绳弹弓需要球体的真实屏幕位置
 
   const isTimerCritical = (t) => {
     if (!t || t === "00:00:00" || !t.includes(':')) return false;
@@ -550,9 +553,11 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
       <div className={`orb-glass-breather ${offline ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
         <div
           className="orb-glass"
+          ref={orbGlassRef}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
-          onClick={onPopOut ? (() => { startFlowBurst(30000); onPopOut(); }) : undefined}
+          onMouseDown={(e) => eggBeginDrag(e, orbGlassRef.current)}
+          onClick={onPopOut ? (() => { if (eggConsumeClickSuppress()) return; startFlowBurst(30000); onPopOut(); }) : undefined}
           style={onPopOut ? { cursor: 'pointer' } : undefined}
           title={onPopOut ? 'Pop out as desktop widget' : undefined}
         >
