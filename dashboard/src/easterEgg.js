@@ -47,12 +47,19 @@ export const PHYS = {
   ORB_DRAG: 1.2,         // 生成球空气阻力(比玩家球更大,会慢慢停)
   // ── 第二关:球雨消除 ──
   LEVEL2_SCORE: 100,     // 进入第二关的分数
-  WIN_SCORE: 200,        // 第二关分数到这个数直接"赢了",搞笑收场
   RAIN_V0: 130,          // 初始下落速度 px/s
   RAIN_ACCEL: 6,         // 每秒全局提速 px/s²
   RAIN_SPAWN0: 2.2,      // 初始生成间隔 s
   RAIN_SPAWN_MIN: 0.5,   // 最快生成间隔 s
   RAIN_RAMP: 45,         // 生成间隔收紧时间常数 s
+  // ── 第三关:流星风暴(球从四面八方飞入) ──
+  LEVEL3_SCORE: 200,     // 进入第三关的分数
+  WIN_SCORE: 300,        // 第三关分数到这个数直接"赢了",搞笑收场
+  STORM_V0: 170,         // 初始飞入速度 px/s
+  STORM_ACCEL: 7,        // 每秒全局提速 px/s²
+  STORM_SPAWN0: 1.8,     // 初始生成间隔 s
+  STORM_SPAWN_MIN: 0.45, // 最快生成间隔 s
+  STORM_RAMP: 40,        // 生成间隔收紧时间常数 s
 };
 
 // 三种颜色(与主界面的三颗水晶球对应)
@@ -73,6 +80,7 @@ const G = {
   score: 0,
   bgAlpha: 0, matchT: 0, spawnIn: 0,
   rainT: 0, fallV: 0,
+  stormT: 0, stormV: 0,
   keys: new Set(), drag: null,
   suppressClick: false,
   audio: null,
@@ -81,8 +89,8 @@ const G = {
   dimEl: null,
   winMsgEl: null,
   resizeHandler: null,
-  // 第二关(rainmatch)专用:按住直接拖着球走(像空气曲棍球球拍),不是
-  // 拉弓蓄力松手弹射。holdActive 时每帧把球位置吸附到鼠标位置,速度由
+  // 第二/三关(rainmatch/storm)专用:按住直接拖着球走(像空气曲棍球球拍),
+  // 不是拉弓蓄力松手弹射。holdActive 时每帧把球位置吸附到鼠标位置,速度由
   // 帧间位移算出 —— 拖得快、角度斜,撞到球时力度/方向就相应地大/偏。
   holdActive: false, holdTargetX: 0, holdTargetY: 0,
   chromeTop: 0, chromeBottom: 0,   // 顶栏底部/底栏顶部的真实屏幕 y 坐标
@@ -132,6 +140,10 @@ const sfx = {
   win() {  // 赢了:上扬的四音琶音(C-E-G-高八度C)
     tone(523, 0.15, 'sine', 0.14); tone(659, 0.15, 'sine', 0.13, 0.1);
     tone(784, 0.15, 'sine', 0.12, 0.2); tone(1047, 0.4, 'sine', 0.15, 0.3);
+  },
+  level3() {  // 进第三关:比 grow 更急促的三连升调,预告"风暴要来了"
+    tone(523, 0.12, 'sine', 0.1); tone(659, 0.12, 'sine', 0.1, 0.1);
+    tone(784, 0.35, 'sine', 0.12, 0.2);
   },
 };
 
@@ -405,6 +417,60 @@ function spawnRainOrb() {
   G.orbs.push(orb);
 }
 
+// ── 流星风暴(第三关):球从四条边外侧飞入,朝场内中央区域 ──────────
+function spawnStormOrb() {
+  const color = ORB_COLORS[(Math.random() * ORB_COLORS.length) | 0];
+  const size = orbSize();
+  const r = size / 2;
+
+  const el = document.createElement('div');
+  el.className = 'egg-orb';
+  el.style.width = el.style.height = `${size}px`;
+  el.style.boxShadow = `
+    inset 0 0 ${size * 0.15}px rgba(0,0,0,0.9),
+    inset 0 0 ${size * 0.04}px rgba(255,255,255,0.2),
+    inset 0 -${size * 0.08}px ${size * 0.16}px rgba(255,255,255,0.12),
+    0 ${size * 0.08}px ${size * 0.16}px rgba(0,0,0,0.6),
+    0 0 ${size * 0.2}px ${color.hex}44`;
+  const img = document.createElement('img');
+  img.src = '/liquid-poster.png';
+  img.style.cssText = `
+    position: absolute; left: 50%; top: 50%;
+    width: 145%; height: 145%;
+    transform: translate(-50%, -50%);
+    object-fit: cover; mix-blend-mode: screen;
+    filter: hue-rotate(${color.hue}) saturate(${color.sat}) brightness(${color.bri});
+  `;
+  el.appendChild(img);
+  const spec = document.createElement('div');
+  spec.className = 'egg-orb-specular';
+  el.appendChild(spec);
+  document.body.appendChild(el);
+
+  // 随机挑一条边,在边外侧生成,瞄准场内中央 50% 区域里的随机一点
+  const edge = (Math.random() * 4) | 0;   // 0上 1右 2下 3左
+  let x, y;
+  if (edge === 0)      { x = Math.random() * G.W; y = -r * 2; }
+  else if (edge === 1) { x = G.W + r * 2; y = Math.random() * G.H; }
+  else if (edge === 2) { x = Math.random() * G.W; y = G.H + r * 2; }
+  else                 { x = -r * 2; y = Math.random() * G.H; }
+  const tx = G.W * (0.25 + Math.random() * 0.5);
+  const ty = G.H * (0.25 + Math.random() * 0.5);
+  const d = Math.hypot(tx - x, ty - y) || 1;
+  const v = G.stormV * (0.85 + Math.random() * 0.3);
+
+  const orb = {
+    el, r, x, y, color: color.id,
+    vx: ((tx - x) / d) * v,
+    vy: ((ty - y) / d) * v,
+    rot: 0, dead: false,
+    incoming: true,   // 飞入途中,未被碰过(不受墙约束,穿场而过就算漏)
+    entered: false,   // 是否已完整进过场内(没进过场就不算"漏掉")
+  };
+  el.style.transform = `translate(${x - r}px, ${y - r}px)`;
+  G.orbs.push(orb);
+}
+
 // ── 消除球之间以及与玩家球的碰撞 ─────────────────────────────────────
 function collideOrbs(a, b) {
   // 同 collide() 但适用于 orb 对象(没有 orb.orb 属性)
@@ -446,7 +512,7 @@ function render() {
   }
 
   // 得分: 写入 DOM，以获得更好的设计感和半透明背景下的可见度
-  const inGamePhase = G.stateName === 'match' || G.stateName === 'rainmatch' || G.stateName === 'over';
+  const inGamePhase = G.stateName === 'match' || G.stateName === 'rainmatch' || G.stateName === 'storm' || G.stateName === 'over';
   if (G.score !== 0 || inGamePhase) {
     if (G.scoreEl) {
       G.scoreEl.textContent = String(G.score);
@@ -759,6 +825,125 @@ register('rainmatch', {
     // 清理
     G.orbs = G.orbs.filter(o => !o.dead);
 
+    // 分数到阈值 → 进第三关(流星风暴)
+    if (G.score >= PHYS.LEVEL3_SCORE) {
+      switchState('storm');
+      return;
+    }
+  },
+});
+
+// 第三关:流星风暴 — 球从四面八方飞入,穿场而过没拦到就漏分;
+// 被碰过的球留在场内四壁弹跳,同色相撞消除。操控沿用第二关的按住直拖。
+register('storm', {
+  enter() {
+    G.stormT = 0; G.spawnIn = 0.6;
+    G.stormV = PHYS.STORM_V0;
+    G.holdActive = false;
+    // 清掉第二关残留的球雨
+    clearOrbs();
+    sfx.level3();
+  },
+  update(dt) {
+    G.stormT += dt;
+    G.matchT += dt;  // 继续用于 orbSize 缩小
+    G.stormV += PHYS.STORM_ACCEL * dt;  // 越飞越快
+
+    // 定时从四边生成流星球
+    const spawnEvery = PHYS.STORM_SPAWN_MIN +
+      (PHYS.STORM_SPAWN0 - PHYS.STORM_SPAWN_MIN) * Math.exp(-G.stormT / PHYS.STORM_RAMP);
+    G.spawnIn -= dt;
+    if (G.spawnIn <= 0) { spawnStormOrb(); G.spawnIn = spawnEvery; }
+
+    // 玩家球:与第二关同一套按住直拖(见 rainmatch 里的详细注释)
+    const p = player();
+    if (G.holdActive) {
+      const safeDt = Math.max(dt, 1 / 240);
+      const tx = Math.max(p.r, Math.min(G.W - p.r, G.holdTargetX));
+      const ty = Math.max(p.r, Math.min(G.H - p.r, G.holdTargetY));
+      let vx = (tx - p.x) / safeDt, vy = (ty - p.y) / safeDt;
+      const sp = Math.hypot(vx, vy), cap = PHYS.MAX_LAUNCH * 1.2;
+      if (sp > cap) { vx *= cap / sp; vy *= cap / sp; }
+      p.vx = vx; p.vy = vy;
+      p.x = tx; p.y = ty;
+      p.rot += ((p.vx * PHYS.ROLL + p.vy * PHYS.ROLL * 0.35) / p.r) * dt;
+    } else {
+      steer(dt);
+      stepBall(p, dt); bounceWalls(p);
+    }
+
+    // 流星球物理
+    for (const o of G.orbs) {
+      if (o.dead) continue;
+      o.x += o.vx * dt; o.y += o.vy * dt;
+      o.rot += ((o.vx * PHYS.ROLL + o.vy * PHYS.ROLL * 0.35) / o.r) * dt;
+      if (o.incoming) {
+        // 飞入中的球不受墙约束:进得来,也穿得出去
+        const inside = o.x - o.r > 0 && o.x + o.r < G.W && o.y - o.r > 0 && o.y + o.r < G.H;
+        if (inside) o.entered = true;
+        const gone = o.x < -o.r * 3 || o.x > G.W + o.r * 3 ||
+                     o.y < -o.r * 3 || o.y > G.H + o.r * 3;
+        if (o.entered && gone) {
+          // 穿场而过没被拦下 → 漏 1 分
+          removeOrb(o);
+          G.score -= 1; sfx.miss();
+          if (G.score <= 0) { switchState('over'); return; }
+        }
+      } else {
+        // 被碰过的球:四壁都弹,加阻力慢慢停(不会再离场)
+        bounceWallsOrb(o);
+        const f = Math.exp(-PHYS.ORB_DRAG * dt);
+        o.vx *= f; o.vy *= f;
+      }
+    }
+
+    // 玩家球 vs 流星球碰撞(与第二关同一套弹性碰撞)
+    for (const o of G.orbs) {
+      if (o.dead) continue;
+      const dx = o.x - p.x, dy = o.y - p.y;
+      const dist = Math.hypot(dx, dy), minD = p.r + o.r;
+      if (dist > 0 && dist < minD) {
+        const nx = dx / dist, ny = dy / dist;
+        const ma = p.r * p.r, mb = o.r * o.r;
+        const overlap = minD - dist;
+        p.x -= nx * overlap * (mb / (ma + mb)); p.y -= ny * overlap * (mb / (ma + mb));
+        o.x += nx * overlap * (ma / (ma + mb)); o.y += ny * overlap * (ma / (ma + mb));
+        const dvx = p.vx - o.vx, dvy = p.vy - o.vy;
+        const dvn = dvx * nx + dvy * ny;
+        if (dvn > 0) {
+          const j = dvn * 2 * ma * mb / (ma + mb) * PHYS.BALL_REST;
+          p.vx -= (j / ma) * nx; p.vy -= (j / ma) * ny;
+          o.vx += (j / mb) * nx; o.vy += (j / mb) * ny;
+          sfx.clink(Math.min(1, Math.hypot(p.vx, p.vy) / 700 + 0.3));
+        }
+        // 被玩家拦下 → 留在场内
+        if (o.incoming) o.incoming = false;
+      }
+    }
+
+    // 流星球之间:同色消除,异色弹开(双方都被"拦下")
+    const alive = G.orbs.filter(o => !o.dead);
+    for (let i = 0; i < alive.length; i++) {
+      for (let j = i + 1; j < alive.length; j++) {
+        const a = alive[i], b = alive[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy), minD = a.r + b.r;
+        if (dist > 0 && dist < minD) {
+          if (a.color === b.color) {
+            matchOrbs(a, b);
+          } else {
+            collideOrbs(a, b);
+            sfx.bounce(Math.hypot(a.vx, a.vy) / 500);
+            if (a.incoming) a.incoming = false;
+            if (b.incoming) b.incoming = false;
+          }
+        }
+      }
+    }
+
+    // 清理
+    G.orbs = G.orbs.filter(o => !o.dead);
+
     // 赢了:分数到阈值,搞笑收场(不是失败,是"我服了你了")
     if (G.score >= PHYS.WIN_SCORE) {
       switchState('win');
@@ -771,7 +956,7 @@ register('rainmatch', {
 const WIN_LINES = [
   "Alright, alright — you win. Go do something productive now.",
   "OK champion, put the mouse down and go touch grass.",
-  "200 points. Impressive. Deeply unnecessary. Go be useful now.",
+  "300 points. Impressive. Deeply unnecessary. Go be useful now.",
 ];
 register('win', {
   enter() {
@@ -917,10 +1102,10 @@ function onGameGrab(e) {
   if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > p.r + 24) return;
   e.preventDefault();   // 不阻止的话,横扫式拖拽会被浏览器当成"选中文字"
 
-  // 第二关(球雨消除):按住直接拖着球走,不是拉弓蓄力松手弹射。
-  // 拖动速度/角度由 rainmatch 的 update() 每帧从鼠标位移里算出来,
-  // 天然决定撞到掉落球时那颗球飞出去的力度和方向。
-  if (G.stateName === 'rainmatch') {
+  // 第二/三关(球雨消除/流星风暴):按住直接拖着球走,不是拉弓蓄力松手弹射。
+  // 拖动速度/角度由各自的 update() 每帧从鼠标位移里算出来,
+  // 天然决定撞到球时那颗球飞出去的力度和方向。
+  if (G.stateName === 'rainmatch' || G.stateName === 'storm') {
     G.holdActive = true;
     G.holdTargetX = e.clientX; G.holdTargetY = e.clientY;
     const move = (ev) => {
