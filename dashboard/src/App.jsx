@@ -407,7 +407,7 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0 }) => {
   const radius = 65;
   const circumference = 2 * Math.PI * radius;
   const validPct = Math.max(0, Math.min(100, percentage));
@@ -550,17 +550,27 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   // 一边涨一边在读后台数据;涨满之后,如果真实数据已经到了就直接用真实值——
   // .video-blob 自带的 1.5s transition 会把它从"满"平滑收回到该有的高度;
   // 真实数据还没到就先满着等,数据一到同样靠那个 transition 自然收回去。
+  // introOrder(0/1/2,从左到右)让三个球错开开始,一个接一个地涨,而不是
+  // 同时一起涨——每个球自己涨满仍是 INTRO_MS,只是起涨时间依次延后。
   const [introDone, setIntroDone] = useState(false);
   const [introPct, setIntroPct] = useState(0);
   const introRafRef = useRef(null);
   const introStartRef = useRef(null);
-  const INTRO_MS = 1600;
+  const INTRO_MS = 3000;
+  const INTRO_STAGGER_MS = 550;
+  const introDelay = introOrder * INTRO_STAGGER_MS;
 
   useEffect(() => {
     if (introDone) return;
     const step = (ts) => {
       if (introStartRef.current == null) introStartRef.current = ts;
-      const t = Math.min(1, (ts - introStartRef.current) / INTRO_MS);
+      const localElapsed = ts - introStartRef.current - introDelay;
+      if (localElapsed < 0) {
+        // 还没轮到这个球起涨,继续等待,液体保持空。
+        introRafRef.current = requestAnimationFrame(step);
+        return;
+      }
+      const t = Math.min(1, localElapsed / INTRO_MS);
       const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic:起势快、到顶渐缓
       setIntroPct(eased * 100);
       if (t < 1) {
@@ -1042,6 +1052,7 @@ function App() {
             stackLabels={true}
             connected={connected}
             dataLoaded={dataLoaded}
+            introOrder={0}
             ambientPulse={ambientOrb === 'claude'}
             onPopOut={() => launchWidget('claude')}
           />
@@ -1057,6 +1068,7 @@ function App() {
             primaryLabel="CODEX REMAINING"
             connected={connected}
             dataLoaded={dataLoaded}
+            introOrder={1}
             resetCredits={data.codex.reset_credits}
             ambientPulse={ambientOrb === 'codex'}
             onPopOut={() => launchWidget('codex')}
@@ -1078,6 +1090,7 @@ function App() {
             stackLabels={true}
             connected={connected}
             dataLoaded={dataLoaded}
+            introOrder={2}
             offline={data.antigravity.available === false}
             ambientPulse={ambientOrb === 'antigravity'}
             onPopOut={() => launchWidget('antigravity')}
