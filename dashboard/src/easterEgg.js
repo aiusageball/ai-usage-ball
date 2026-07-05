@@ -17,9 +17,11 @@
      曲棍球球拍)去撞。同色消除 +2,漏到底边扣 1 分,分数≤0 结束。
      分数到 200 进第三关。
    ─ 极速车道(race,第三关,地狱难度):窗口自动拉高,3 条车道,水晶球
-     迎面而来越来越大。左右方向键换道拦截:同色 +分(带 combo 倍率),
-     异色扣分且清 combo。只加速不减速,~18s 后进入 HELL MODE(生成更密、
-     偶尔双车道齐飞)。分数掉到 0 直接结束;到 300 直接"赢了"。
+     迎面而来越来越大,3-2-1-GO 发车。左右方向键换道,接触那一刹那结算:
+     接住同色 +分×combo(粒子爆裂),撞上异色 -15 清 combo 红屏震动,
+     该接的同色溜走也 -3(不能光躲)。只加速不减速,20s HELL MODE
+     (双发+中途变道的漂移球),40s MAX GEAR(双发成常态)。
+     分数掉到 0 直接结束;到 300 直接"赢了"。
    ─ Esc 随时退出。状态用 registry 注册,未来玩法 register()+switchState 即挂。
 
    玩家球与被撞球都是【真实 DOM 节点】:游戏开始把 .orb-glass 摘到 body 下
@@ -64,17 +66,19 @@ export const PHYS = {
   WIN_SCORE: 300,        // 第三关分数到这个数直接"赢了",搞笑收场
   RACE_LANES: 3,         // 车道数(左中右)
   RACE_WIN_H: 760,       // 进第三关时窗口拉高到这个高度(默认 470,见 DEFAULT_WIN_H)
-  RACE_HIT_Y_FRAC: 0.86, // 判定线位置,相对场地高度的比例
-  RACE_V0: 230,          // 初始接近速度 px/s
-  RACE_ACCEL: 11,        // 每秒提速 px/s²(地狱难度的核心:越到后面越快)
-  RACE_SPAWN0: 1.3,      // 初始生成间隔 s
-  RACE_SPAWN_MIN: 0.28,  // 最快生成间隔 s
-  RACE_RAMP: 28,         // 生成间隔收紧时间常数 s
-  RACE_HELL_AT: 18,      // 这么多秒后进入"地狱模式"(生成更密、偶尔双车道齐飞)
-  RACE_HIT_SCORE: 3,     // 撞对颜色 +3(乘 combo 倍率)
-  RACE_MISS_SCORE: 5,    // 撞错颜色 -5(比加分更重,逼你不能瞎撞)
-  RACE_COMBO_MAX: 4,     // 连续撞对的 combo 倍率上限
-  RACE_LANE_SLIDE: 14,   // 换道时的插值速度系数(越大切换越快)
+  RACE_HIT_Y_FRAC: 0.86, // 玩家球所在行,相对场地高度的比例
+  RACE_V0: 260,          // 初始接近速度 px/s
+  RACE_ACCEL: 13,        // 每秒提速 px/s²(地狱难度的核心:越到后面越快)
+  RACE_SPAWN0: 1.15,     // 初始生成间隔 s
+  RACE_SPAWN_MIN: 0.24,  // 最快生成间隔 s
+  RACE_RAMP: 24,         // 生成间隔收紧时间常数 s
+  RACE_HELL_AT: 20,      // HELL MODE:双道齐发概率大增,开始出中途变道的漂移球
+  RACE_MAX_AT: 40,       // MAX GEAR:双道齐发成为常态
+  RACE_HIT_SCORE: 2,     // 接住同色的基础分(乘 combo 倍率)
+  RACE_WRONG_PENALTY: 15,// 撞错颜色的代价(比加分重得多,一次失误抹掉好几次成果)
+  RACE_PASS_PENALTY: 3,  // 该接的同色球溜过去没接到,也要罚(逼你主动追,不能光躲)
+  RACE_COMBO_MAX: 5,     // 连续接对的 combo 倍率上限
+  RACE_LANE_SLIDE: 16,   // 换道时的插值速度系数(越大切换越快)
 };
 
 // 三种颜色(与主界面的三颗水晶球对应)
@@ -98,8 +102,8 @@ const G = {
   lifeLostUntil: 0,
   // 第三关(极速车道)专用状态
   raceLane: 1, raceHitY: 0, raceT: 0, raceV: 0, raceScrollY: 0,
-  raceCombo: 1, raceHell: false, raceIntroT: 0,
-  raceBannerEl: null, laneEls: null, hitLineEl: null,
+  raceCombo: 0, racePhase: 0, raceIntroT: 0, raceCount: -1,
+  raceBannerEl: null, laneEls: null, hitLineEl: null, hurtEl: null,
   keys: new Set(), drag: null,
   suppressClick: false,
   audio: null,
@@ -168,6 +172,12 @@ const sfx = {
     tone(196, 0.5, 'sawtooth', 0.05); tone(207, 0.5, 'sawtooth', 0.04, 0.05);
     tone(880, 0.15, 'square', 0.06, 0.3);
   },
+  crash() {  // 撞错颜色:低沉的碎裂声,比 miss 更痛
+    tone(110, 0.3, 'sawtooth', 0.14); tone(92, 0.35, 'square', 0.1, 0.02);
+    tone(60, 0.4, 'triangle', 0.12, 0.05);
+  },
+  count() { tone(620, 0.09, 'square', 0.07); },                       // 倒计时滴答
+  go() { tone(880, 0.18, 'square', 0.1); tone(1320, 0.3, 'sine', 0.1, 0.06); },  // 发车!
 };
 
 // ── canvas(只画暗背景) ──────────────────────────────────────────────
@@ -406,6 +416,53 @@ function missFlash(x, y) {
   // 把这个 class 拼进当帧的 className 里。
   G.lifeLostUntil = performance.now() + 350;
 }
+// 接触即爆:一圈色环 + 一把同色粒子四散,给"碰到那一刹那"一个爽脆的反馈。
+function burstFX(x, y, hex) {
+  const ring = document.createElement('div');
+  ring.className = 'egg-burst-ring';
+  const rs = 70;
+  ring.style.left = `${x - rs / 2}px`;
+  ring.style.top = `${y - rs / 2}px`;
+  ring.style.width = ring.style.height = `${rs}px`;
+  ring.style.borderColor = hex;
+  ring.style.boxShadow = `0 0 24px ${hex}`;
+  document.body.appendChild(ring);
+  setTimeout(() => ring.remove(), 480);
+  for (let i = 0; i < 10; i++) {
+    const d = document.createElement('div');
+    d.className = 'egg-burst-dot';
+    d.style.left = `${x - 4}px`;
+    d.style.top = `${y - 4}px`;
+    d.style.background = hex;
+    const a = Math.random() * Math.PI * 2;
+    const dist = 44 + Math.random() * 76;
+    d.style.setProperty('--dx', `${Math.cos(a) * dist}px`);
+    d.style.setProperty('--dy', `${Math.sin(a) * dist}px`);
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 620);
+  }
+}
+// 浮动得分数字:在结算点往上飘一小段然后淡掉("+4 ×2"/"-15")。
+function scorePop(x, y, text, negative) {
+  const el = document.createElement('div');
+  el.className = 'egg-score-pop' + (negative ? ' negative' : '');
+  el.textContent = text;
+  el.style.left = `${Math.max(20, Math.min(G.W - 20, x))}px`;
+  el.style.top = `${Math.max(20, y)}px`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 750);
+}
+// 撞错颜色:整窗红色暗角闪一下 + 比分抖动(复用 lifeLostUntil 机制)。
+function hurtFlash() {
+  if (G.hurtEl) {
+    G.hurtEl.classList.remove('show');
+    void G.hurtEl.offsetWidth;
+    G.hurtEl.classList.add('show');
+    clearTimeout(G.hurtEl._hideTimer);
+    G.hurtEl._hideTimer = setTimeout(() => { if (G.hurtEl) G.hurtEl.classList.remove('show'); }, 280);
+  }
+  G.lifeLostUntil = performance.now() + 350;
+}
 function matchOrbs(a, b) {
   // 同色消除:发光 → 缩小淡出
   a.dead = true; b.dead = true;
@@ -467,9 +524,11 @@ function spawnRainOrb() {
 // ── 极速车道(第三关):3 条车道,球从车道顶端飞近,越近越大 ─────────
 function laneX(i) { return G.W * (i + 0.5) / PHYS.RACE_LANES; }
 
-function spawnRaceOrb() {
+// avoidLane:双道齐发时避开第一颗的车道,保证两颗不叠在同一条道上。
+function spawnRaceOrb(avoidLane = -1) {
   const color = ORB_COLORS[(Math.random() * ORB_COLORS.length) | 0];
-  const lane = (Math.random() * PHYS.RACE_LANES) | 0;
+  let lane = (Math.random() * PHYS.RACE_LANES) | 0;
+  if (lane === avoidLane) lane = (lane + 1 + ((Math.random() * (PHYS.RACE_LANES - 1)) | 0)) % PHYS.RACE_LANES;
 
   const el = document.createElement('div');
   el.className = 'egg-orb egg-race-orb';
@@ -490,10 +549,18 @@ function spawnRaceOrb() {
 
   const orb = {
     el, lane, x: laneX(lane), y: -40, color: color.id,
-    dead: false, hit: false,
+    dead: false, driftTo: null, driftAtY: 0,
   };
+  // 漂移球(HELL MODE 起):飞到半路突然滑向相邻车道——你以为躲开了/接到了,
+  // 它变道了。这是后期不确定性的主要来源。
+  if (G.racePhase >= 1 && Math.random() < 0.3) {
+    const candidates = [lane - 1, lane + 1].filter(l => l >= 0 && l < PHYS.RACE_LANES);
+    orb.driftTo = candidates[(Math.random() * candidates.length) | 0];
+    orb.driftAtY = G.H * (0.25 + Math.random() * 0.35);
+  }
   applyRaceOrb(orb);
   G.orbs.push(orb);
+  return orb;
 }
 // 车道球按 y 到判定线的进度线性放大(远小近大,营造迎面而来的纵深感)。
 function applyRaceOrb(o) {
@@ -532,13 +599,19 @@ function ensureRaceUI() {
     G.raceBannerEl.id = 'egg-race-banner';
     document.body.appendChild(G.raceBannerEl);
   }
+  if (!G.hurtEl) {
+    G.hurtEl = document.createElement('div');
+    G.hurtEl.id = 'egg-hurt';
+    document.body.appendChild(G.hurtEl);
+  }
 }
 function removeRaceUI() {
   if (G.laneEls) { G.laneEls.forEach(el => el.remove()); G.laneEls = null; }
   if (G.hitLineEl) { G.hitLineEl.remove(); G.hitLineEl = null; }
   if (G.raceBannerEl) { G.raceBannerEl.remove(); G.raceBannerEl = null; }
+  if (G.hurtEl) { G.hurtEl.remove(); G.hurtEl = null; }
 }
-function showRaceBanner(text) {
+function showRaceBanner(text, ms = 1400) {
   if (!G.raceBannerEl) return;
   G.raceBannerEl.textContent = text;
   G.raceBannerEl.classList.remove('show');
@@ -547,7 +620,7 @@ function showRaceBanner(text) {
   clearTimeout(G.raceBannerEl._hideTimer);
   G.raceBannerEl._hideTimer = setTimeout(() => {
     if (G.raceBannerEl) G.raceBannerEl.classList.remove('show');
-  }, 1400);
+  }, ms);
 }
 // 车道线 + 判定线跟着顶/底栏边界走(和 #egg-dim 同一套逻辑),分隔线的
 // background-position 按当前速度滚动,制造"向你冲来"的动感。
@@ -937,17 +1010,22 @@ register('rainmatch', {
   },
 });
 
-// 第三关:极速车道 — 3 条车道,水晶球迎面而来越来越大,左右换道拦截。
-// 同色 = 加分(带 combo 倍率),异色 = 扣分且清空 combo,分数归零直接结束。
-// 全程只加速不减速,这是整个彩蛋里唯一"地狱难度"的一关。
+// 第三关:极速车道 — 3 条车道,水晶球迎面而来越来越大,左右换道。
+// 规则(全部围绕"接触那一刹那"结算,圆碰圆立即爆裂,不等重合):
+//  · 接住同色 → +基础分×combo(连续接对 combo 涨到 5x,爆彩色粒子)
+//  · 撞上异色 → -15、清 combo、红屏震动(一次失误抹掉几次成果)
+//  · 该接的同色溜过去没接到 → -3、清 combo(不能光躲,得追)
+//  · 异色从别的车道溜走 → 无事,这才是成功的躲避
+//  · 只加速不减速;20s HELL MODE(双发变多+漂移球),40s MAX GEAR(双发成常态)
+//  · 分数掉到 0 结束;到 300 赢
 register('race', {
   enter() {
-    G.raceT = 0; G.spawnIn = 0.9;
+    G.raceT = 0; G.spawnIn = 0;
     G.raceV = PHYS.RACE_V0;
     G.raceLane = 1;
-    G.raceCombo = 1;
-    G.raceHell = false;
-    G.raceIntroT = 0;
+    G.raceCombo = 0;
+    G.racePhase = 0;
+    G.raceIntroT = 0; G.raceCount = -1;
     G.raceScrollY = 0;
     G.holdActive = false;
     clearOrbs();
@@ -958,7 +1036,6 @@ register('race', {
     if (winApi) {
       try { winApi.getCurrentWindow().setSize(new winApi.LogicalSize(DEFAULT_WIN_W, PHYS.RACE_WIN_H)); } catch (e) {}
     }
-    showRaceBanner('HELL RACE — ← / → SWITCH LANES');
     const p = player();
     if (p) {
       p.x = laneX(1); p.y = G.H * PHYS.RACE_HIT_Y_FRAC; p.vx = 0; p.vy = 0;
@@ -968,7 +1045,7 @@ register('race', {
     removeRaceUI();
   },
   update(dt) {
-    // 每帧按当前 G.H 重算判定线——进关瞬间窗口才刚开始拉高,resize 事件
+    // 每帧按当前 G.H 重算玩家行——进关瞬间窗口才刚开始拉高,resize 事件
     // 生效前 G.H 还是旧高度,不能只在 enter() 里算一次。
     G.raceHitY = G.H * PHYS.RACE_HIT_Y_FRAC;
 
@@ -977,20 +1054,35 @@ register('race', {
       const targetX = laneX(G.raceLane);
       p.x += (targetX - p.x) * Math.min(1, dt * PHYS.RACE_LANE_SLIDE);
       p.y = G.raceHitY;
-      p.rot += dt * 3.2;   // 匀速滚动,营造车轮飞转的前冲感
+      p.rot += dt * (2.2 + G.raceV / 240);   // 越快滚得越快,车轮飞转的前冲感
       applyBall(p);
     }
-
-    G.raceIntroT += dt;
     renderRaceUI(dt);
-    // 窗口刚拉高、banner 还在读,给玩家 1.1s 准备时间,不生成球也不计速
-    if (G.raceIntroT < 1.1) return;
+
+    // 开场 3-2-1-GO 倒计时(先给一屏操作提示),读秒期间可以先练换道
+    G.raceIntroT += dt;
+    if (G.raceIntroT < 3.1) {
+      const stage = Math.min(4, Math.floor(G.raceIntroT / 0.62));
+      if (stage !== G.raceCount) {
+        G.raceCount = stage;
+        const texts = ['← / → SWITCH LANES', '3', '2', '1', 'GO!'];
+        showRaceBanner(texts[stage], 620);
+        if (stage >= 1 && stage <= 3) sfx.count();
+        if (stage === 4) sfx.go();
+      }
+      return;
+    }
 
     G.raceT += dt;
     G.raceV += PHYS.RACE_ACCEL * dt;   // 只加速不减速,这就是"地狱"的核心
-    if (!G.raceHell && G.raceT > PHYS.RACE_HELL_AT) {
-      G.raceHell = true;
+    if (G.racePhase === 0 && G.raceT > PHYS.RACE_HELL_AT) {
+      G.racePhase = 1;
       showRaceBanner('HELL MODE');
+      sfx.hell();
+    }
+    if (G.racePhase === 1 && G.raceT > PHYS.RACE_MAX_AT) {
+      G.racePhase = 2;
+      showRaceBanner('MAX GEAR');
       sfx.hell();
     }
 
@@ -998,33 +1090,61 @@ register('race', {
       (PHYS.RACE_SPAWN0 - PHYS.RACE_SPAWN_MIN) * Math.exp(-G.raceT / PHYS.RACE_RAMP);
     G.spawnIn -= dt;
     if (G.spawnIn <= 0) {
-      spawnRaceOrb();
-      // 地狱模式:有概率同一时间再补一颗别的车道的球,逼你二选一
-      if (G.raceHell && Math.random() < 0.45) spawnRaceOrb();
+      const first = spawnRaceOrb();
+      // 双道齐发:阶段越深概率越高,两颗永远不同车道,逼你瞬间二选一
+      const doubleP = G.racePhase === 2 ? 0.7 : G.racePhase === 1 ? 0.5 : 0.15;
+      if (Math.random() < doubleP) spawnRaceOrb(first.lane);
       G.spawnIn = spawnEvery;
     }
 
     for (const o of G.orbs) {
-      if (o.dead || o.hit) continue;
+      if (o.dead) continue;
       o.y += G.raceV * dt;
+      // 漂移球:飞到设定高度后平滑滑向相邻车道
+      if (o.driftTo != null && o.y > o.driftAtY) {
+        const tx = laneX(o.driftTo);
+        o.x += (tx - o.x) * Math.min(1, dt * 6);
+        if (Math.abs(tx - o.x) < 1) { o.x = tx; o.lane = o.driftTo; o.driftTo = null; }
+      }
       applyRaceOrb(o);
-      if (o.y < G.raceHitY) continue;
-      // 到判定线了:该拦的拦,该扣的扣;不在这条车道上就悄悄放过,不加不扣
-      o.hit = true;
-      if (o.lane === G.raceLane) {
+
+      // 接触判定:圆碰圆的那一刹那立即爆裂结算,不等重合
+      const dx = o.x - p.x, dy = o.y - p.y;
+      if (Math.hypot(dx, dy) <= p.r + o.r) {
+        o.dead = true;
+        const hex = (ORB_COLORS.find(c => c.id === o.color) || ORB_COLORS[0]).hex;
         if (o.color === p.color) {
           G.raceCombo = Math.min(PHYS.RACE_COMBO_MAX, G.raceCombo + 1);
-          G.score += PHYS.RACE_HIT_SCORE * G.raceCombo;
+          const pts = PHYS.RACE_HIT_SCORE * G.raceCombo;
+          G.score += pts;
+          burstFX(o.x, o.y, hex);
+          scorePop(o.x, o.y - o.r, G.raceCombo > 1 ? `+${pts} ×${G.raceCombo}` : `+${pts}`, false);
           sfx.match();
         } else {
-          G.raceCombo = 1;
-          G.score -= PHYS.RACE_MISS_SCORE;
-          missFlash(o.x, G.raceHitY);
+          G.raceCombo = 0;
+          G.score -= PHYS.RACE_WRONG_PENALTY;
+          burstFX(o.x, o.y, '#ff5a5a');
+          scorePop(o.x, o.y - o.r, `-${PHYS.RACE_WRONG_PENALTY}`, true);
+          hurtFlash();
+          sfx.crash();
+          if (G.score <= 0) { o.el.remove(); switchState('over'); return; }
+        }
+        o.el.remove();
+        continue;
+      }
+
+      // 溜出底边:同色是"该接没接到",要罚;异色安全溜走 = 成功躲避
+      if (o.y - o.r > G.H + 10) {
+        o.dead = true; o.el.remove();
+        if (o.color === p.color) {
+          G.raceCombo = 0;
+          G.score -= PHYS.RACE_PASS_PENALTY;
+          missFlash(o.x, G.H);
+          scorePop(o.x, G.H - 46, `-${PHYS.RACE_PASS_PENALTY}`, true);
           sfx.miss();
-          if (G.score <= 0) { removeOrb(o); switchState('over'); return; }
+          if (G.score <= 0) { switchState('over'); return; }
         }
       }
-      removeOrb(o);
     }
     G.orbs = G.orbs.filter(o => !o.dead);
 

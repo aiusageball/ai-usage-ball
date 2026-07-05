@@ -1227,6 +1227,66 @@ select.ando-input {
   transform: translate(-50%, -50%) scale(1);
 }
 
+/* 接触即爆:色环扩散 + 粒子四散(--dx/--dy 由 JS 按随机角度写入) */
+@keyframes egg-burst-ring {
+  0%   { transform: scale(0.35); opacity: 1; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.egg-burst-ring {
+  position: fixed;
+  z-index: 9003;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  animation: egg-burst-ring 0.45s ease-out forwards;
+}
+@keyframes egg-burst-dot {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0.25); opacity: 0; }
+}
+.egg-burst-dot {
+  position: fixed;
+  z-index: 9003;
+  pointer-events: none;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  animation: egg-burst-dot 0.58s cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
+}
+
+/* 浮动得分数字:结算点上飘 + 淡出 */
+@keyframes egg-score-pop {
+  0%   { transform: translate(-50%, 0) scale(0.8); opacity: 0; }
+  18%  { transform: translate(-50%, -8px) scale(1.15); opacity: 1; }
+  100% { transform: translate(-50%, -44px) scale(1); opacity: 0; }
+}
+.egg-score-pop {
+  position: fixed;
+  z-index: 9004;
+  pointer-events: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 17px;
+  color: #7dffb0;
+  text-shadow: 0 0 12px rgba(125, 255, 176, 0.8), 0 1px 3px rgba(0,0,0,0.8);
+  animation: egg-score-pop 0.72s ease-out forwards;
+}
+.egg-score-pop.negative {
+  color: #ff5a5a;
+  text-shadow: 0 0 12px rgba(255, 90, 90, 0.8), 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* 撞错颜色:整窗红色暗角闪一下,痛感 */
+#egg-hurt {
+  position: fixed;
+  inset: 0;
+  z-index: 9006;
+  pointer-events: none;
+  box-shadow: inset 0 0 90px rgba(255, 50, 50, 0.55);
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+#egg-hurt.show { opacity: 1; }
+
 #egg-exit-btn {
   position: fixed;
   top: 32px;
