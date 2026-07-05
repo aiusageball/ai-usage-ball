@@ -1,0 +1,40 @@
+{
+  "updated": "2026-07-05",
+  "items": [
+    {
+      "date": "2026-07-05",
+      "tag": "claude",
+      "title": "Claude Sonnet 5 is now the default model in Claude Code",
+      "summary": "Ships with a native 1M-token context window and promotional $2/$10-per-Mtok pricing through August 31.",
+      "url": "https://www.anthropic.com/news"
+    },
+    {
+      "date": "2026-07-01",
+      "tag": "claude",
+      "title": "Claude Fable 5 is back online worldwide",
+      "summary": "Restored across Claude.ai, the API, Claude Code and Cowork after a brief export-control pause was lifted on June 30.",
+      "url": "https://www.anthropic.com/news/redeploying-fable-5"
+    },
+    {
+      "date": "2026-07-03",
+      "tag": "codex",
+      "title": "Codex usage now runs on layered limits, not a flat quota",
+      "summary": "Included Plus usage, a 5-hour window, weekly caps and optional credits all stack together — check Settings > Usage or run /status instead of guessing.",
+      "url": "https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan"
+    },
+    {
+      "date": "2026-06-30",
+      "tag": "antigravity",
+      "title": "Gemini 3.5 Flash lands with a 1M-token window",
+      "summary": "Tuned for coding and agent workflows, rolling out broadly across Google's products.",
+      "url": "https://llm-stats.com/llm-updates"
+    },
+    {
+      "date": "2026-06-28",
+      "tag": "antigravity",
+      "title": "Gemini passes 900 million monthly users",
+      "summary": "Google is leaning further into agentic features like Daily Brief and Spark, a background agent that keeps working after you step away.",
+      "url": "https://www.forbes.com/sites/janakirammsv/2026/05/21/google-io-2026-turned-gemini-into-an-agent-platform/"
+    }
+  ]
+}
