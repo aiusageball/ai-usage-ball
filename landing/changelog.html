@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Changelog - AI Usage Ball</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2244%22 fill=%22%23ff8c00%22/></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0a0a0d; --bg2:#101015; --panel:rgba(255,255,255,0.03);
+    --line:rgba(255,255,255,0.08); --txt:#f4f4f6; --muted:#9a9aa6;
+    --claude:#ff8c00; --green:#4ade80; --blue:#60a5fa; --red:#f87171; --max:760px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--txt);
+    line-height:1.6;padding:40px 24px;
+  }
+  a{color:var(--claude);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--max);margin:0 auto;}
+  h1{font-size:32px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em}
+  .meta{font-size:14px;color:var(--muted);margin-bottom:40px;opacity:0.7}
+  .back{display:inline-flex;margin-bottom:32px;font-size:14px;color:var(--muted);text-decoration:none}
+  .back:hover{color:var(--txt)}
+  .version{
+    border:1px solid var(--line);background:var(--panel);border-radius:14px;
+    padding:24px 28px;margin-bottom:24px;
+  }
+  .version-header{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .version-num{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:18px;color:#fff}
+  .version-date{font-size:13px;color:var(--muted)}
+  .tag{
+    font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+    letter-spacing:.06em;padding:2px 8px;border-radius:5px;text-transform:uppercase;
+  }
+  .tag.added{background:rgba(74,222,128,.12);color:var(--green)}
+  .tag.changed{background:rgba(96,165,250,.12);color:var(--blue)}
+  .tag.fixed{background:rgba(248,113,113,.12);color:var(--red)}
+  .group{margin-bottom:14px}
+  .group:last-child{margin-bottom:0}
+  .group-label{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  ul{padding-left:20px;color:var(--muted)}
+  li{margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="index.html" class="back">← Back to Home</a>
+  <h1>Changelog</h1>
+  <div class="meta">What's new in AI Usage Ball</div>
+
+  <div class="version">
+    <div class="version-header">
+      <span class="version-num">v0.2.0</span>
+      <span class="version-date">July 5, 2026</span>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag added">Added</span></div>
+      <ul>
+        <li>Hidden easter egg: drag any crystal ball to discover a physics-based mini game — a color-matching arena, a falling-ball catch level, and a hell-difficulty lane-racing finale.</li>
+        <li>Auto-update: the app checks for and installs updates on its own (toggle in Settings, on by default).</li>
+        <li>Terms and Privacy pages.</li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag changed">Changed</span></div>
+      <ul>
+        <li>Self-contained installer — no longer depends on a separately-installed Python environment.</li>
+        <li>Much faster startup: cold launch ~26s → ~5s, warm relaunch ~13s → ~3s.</li>
+        <li>Smoother opening animation — usage rings fill in from empty instead of popping in with placeholder values.</li>
+        <li>Main window background is translucent, matching the desktop-widget look.</li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag fixed">Fixed</span></div>
+      <ul>
+        <li>Antigravity usage sometimes took ~20 seconds to show real data after launch.</li>
+        <li>Claude usage occasionally took over a minute to appear, or failed to load at all.</li>
+        <li>Window size stayed stretched after playing the hidden game — now resets on exit.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="version">
+    <div class="version-header">
+      <span class="version-num">v0.1.0</span>
+      <span class="version-date">July 2, 2026</span>
+    </div>
+    <div class="group">
+      <ul>
+        <li>Initial public release: live usage tracking for Claude, Codex, and Antigravity, with desktop widgets and a free 30-day trial.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>
