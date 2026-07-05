@@ -642,6 +642,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         <div
           className="orb-glass"
           ref={orbGlassRef}
+          data-provider={label ? label.toLowerCase() : undefined}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
           onMouseDown={(e) => eggBeginDrag(e, orbGlassRef.current)}

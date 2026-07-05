@@ -1168,6 +1168,65 @@ select.ando-input {
   animation: egg-life-lost-pulse 0.35s ease;
 }
 
+/* 第三关(极速车道):车道分隔线——虚线纵向滚动,营造"迎面冲来"的速度感。
+   background-position-y 由 JS 按当前速度每帧递增(见 renderRaceUI)。 */
+.egg-lane-line {
+  position: fixed;
+  z-index: 9000;
+  width: 2px;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.35) 0px, rgba(255, 255, 255, 0.35) 22px,
+    transparent 22px, transparent 46px
+  );
+}
+
+/* 判定线:一条会呼吸的发光横线,告诉玩家"球飞到这里才算数" */
+@keyframes egg-hit-line-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.egg-hit-line {
+  position: fixed;
+  z-index: 9000;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.7) 15%, rgba(255, 255, 255, 0.7) 85%, transparent);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.5);
+  animation: egg-hit-line-breathe 1.4s ease-in-out infinite;
+}
+
+/* 第三关开场/地狱模式提示语——比 #egg-win-msg 更抢眼一些(红色调、更大字号) */
+#egg-race-banner {
+  position: fixed;
+  top: 40%; left: 50%;
+  z-index: 9010;
+  pointer-events: none;
+  max-width: 420px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: rgba(40, 12, 12, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 18px 26px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 90, 90, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 60, 60, 0.25);
+  text-shadow: 0 0 12px rgba(255, 90, 90, 0.6);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+#egg-race-banner.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
 #egg-exit-btn {
   position: fixed;
   top: 32px;

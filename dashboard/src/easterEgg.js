@@ -8,11 +8,18 @@
      全在,数字随球滚动旋转)在窗口内反弹。撞到界面里【另外两个真实水晶
      球】→ 那颗球也被撞飞、变成物理球,+1 分(玻璃脆响)。
    ─ 折叠:两颗球都被撞飞后,UI 淡出,背景变暗。
-   ─ 消除:全尺寸水晶球(与主界面同一视觉风格)不断出现在场景中。
+   ─ 消除(match):全尺寸水晶球(与主界面同一视觉风格)不断出现在场景中。
      玩家用弹射/方向键把球撞过去,被撞中的球会弹飞并继续撞其他球,
      形成连锁反应。当两个【同色球】碰撞时,一起消除,+2 分。
      异色球则正常弹开。球会随时间逐渐变小增加难度。
-     场上球过多(≥12 个)游戏结束。
+     场上球过多(≥12 个)游戏结束;分数到 100 进第二关。
+   ─ 球雨消除(rainmatch,第二关):球从上方掉落,按住玩家球直拖(像空气
+     曲棍球球拍)去撞。同色消除 +2,漏到底边扣 1 分,分数≤0 结束。
+     分数到 200 进第三关。
+   ─ 极速车道(race,第三关,地狱难度):窗口自动拉高,3 条车道,水晶球
+     迎面而来越来越大。左右方向键换道拦截:同色 +分(带 combo 倍率),
+     异色扣分且清 combo。只加速不减速,~18s 后进入 HELL MODE(生成更密、
+     偶尔双车道齐飞)。分数掉到 0 直接结束;到 300 直接"赢了"。
    ─ Esc 随时退出。状态用 registry 注册,未来玩法 register()+switchState 即挂。
 
    玩家球与被撞球都是【真实 DOM 节点】:游戏开始把 .orb-glass 摘到 body 下
@@ -52,15 +59,22 @@ export const PHYS = {
   RAIN_SPAWN0: 2.2,      // 初始生成间隔 s
   RAIN_SPAWN_MIN: 0.5,   // 最快生成间隔 s
   RAIN_RAMP: 45,         // 生成间隔收紧时间常数 s
-  // ── 第三关:流星风暴(球从四面八方飞入) ──
+  // ── 第三关:极速车道(地狱难度,分数掉到 0 直接结束) ──
   LEVEL3_SCORE: 200,     // 进入第三关的分数
   WIN_SCORE: 300,        // 第三关分数到这个数直接"赢了",搞笑收场
-  STORM_V0: 170,         // 初始飞入速度 px/s
-  STORM_ACCEL: 7,        // 每秒全局提速 px/s²
-  STORM_SPAWN0: 1.8,     // 初始生成间隔 s
-  STORM_SPAWN_MIN: 0.45, // 最快生成间隔 s
-  STORM_RAMP: 40,        // 生成间隔收紧时间常数 s
-  STORM_LIVES: 5,        // 第三关命数:漏掉这么多个球直接输(分数再高也没用)
+  RACE_LANES: 3,         // 车道数(左中右)
+  RACE_WIN_H: 760,       // 进第三关时窗口拉高到这个高度(默认 470,见 DEFAULT_WIN_H)
+  RACE_HIT_Y_FRAC: 0.86, // 判定线位置,相对场地高度的比例
+  RACE_V0: 230,          // 初始接近速度 px/s
+  RACE_ACCEL: 11,        // 每秒提速 px/s²(地狱难度的核心:越到后面越快)
+  RACE_SPAWN0: 1.3,      // 初始生成间隔 s
+  RACE_SPAWN_MIN: 0.28,  // 最快生成间隔 s
+  RACE_RAMP: 28,         // 生成间隔收紧时间常数 s
+  RACE_HELL_AT: 18,      // 这么多秒后进入"地狱模式"(生成更密、偶尔双车道齐飞)
+  RACE_HIT_SCORE: 3,     // 撞对颜色 +3(乘 combo 倍率)
+  RACE_MISS_SCORE: 5,    // 撞错颜色 -5(比加分更重,逼你不能瞎撞)
+  RACE_COMBO_MAX: 4,     // 连续撞对的 combo 倍率上限
+  RACE_LANE_SLIDE: 14,   // 换道时的插值速度系数(越大切换越快)
 };
 
 // 三种颜色(与主界面的三颗水晶球对应)
@@ -81,7 +95,11 @@ const G = {
   score: 0,
   bgAlpha: 0, matchT: 0, spawnIn: 0,
   rainT: 0, fallV: 0,
-  stormT: 0, stormV: 0, stormLives: 0, lifeLostUntil: 0,
+  lifeLostUntil: 0,
+  // 第三关(极速车道)专用状态
+  raceLane: 1, raceHitY: 0, raceT: 0, raceV: 0, raceScrollY: 0,
+  raceCombo: 1, raceHell: false, raceIntroT: 0,
+  raceBannerEl: null, laneEls: null, hitLineEl: null,
   keys: new Set(), drag: null,
   suppressClick: false,
   audio: null,
@@ -90,8 +108,8 @@ const G = {
   dimEl: null,
   winMsgEl: null,
   resizeHandler: null,
-  // 第二/三关(rainmatch/storm)专用:按住直接拖着球走(像空气曲棍球球拍),
-  // 不是拉弓蓄力松手弹射。holdActive 时每帧把球位置吸附到鼠标位置,速度由
+  // 第二关(rainmatch)专用:按住直接拖着球走(像空气曲棍球球拍),不是
+  // 拉弓蓄力松手弹射。holdActive 时每帧把球位置吸附到鼠标位置,速度由
   // 帧间位移算出 —— 拖得快、角度斜,撞到球时力度/方向就相应地大/偏。
   holdActive: false, holdTargetX: 0, holdTargetY: 0,
   chromeTop: 0, chromeBottom: 0,   // 顶栏底部/底栏顶部的真实屏幕 y 坐标
@@ -142,9 +160,13 @@ const sfx = {
     tone(523, 0.15, 'sine', 0.14); tone(659, 0.15, 'sine', 0.13, 0.1);
     tone(784, 0.15, 'sine', 0.12, 0.2); tone(1047, 0.4, 'sine', 0.15, 0.3);
   },
-  level3() {  // 进第三关:比 grow 更急促的三连升调,预告"风暴要来了"
+  level3() {  // 进第三关:比 grow 更急促的三连升调,预告"车道要来了"
     tone(523, 0.12, 'sine', 0.1); tone(659, 0.12, 'sine', 0.1, 0.1);
     tone(784, 0.35, 'sine', 0.12, 0.2);
+  },
+  hell() {  // 进入地狱模式:低音下沉 + 不和谐音,营造压迫感
+    tone(196, 0.5, 'sawtooth', 0.05); tone(207, 0.5, 'sawtooth', 0.04, 0.05);
+    tone(880, 0.15, 'square', 0.06, 0.3);
   },
 };
 
@@ -266,7 +288,9 @@ function detachOrb(el, isPlayer = false) {
     transformOrigin: `${orb.halfW}px ${orb.halfW}px`,
     willChange: 'transform', transition: 'none',
   });
-  const ball = { x: cx, y: cy, vx: 0, vy: 0, r, rot: 0, orb, isPlayer };
+  // data-provider(App.jsx 上写的,claude/codex/antigravity)记下玩家球自己的
+  // 颜色——第三关(极速车道)要用它判断迎面而来的球是"同色"还是"撞错了"。
+  const ball = { x: cx, y: cy, vx: 0, vy: 0, r, rot: 0, orb, isPlayer, color: el.dataset.provider || null };
   G.balls.push(ball);
   applyBall(ball);
   return ball;
@@ -440,21 +464,15 @@ function spawnRainOrb() {
   G.orbs.push(orb);
 }
 
-// ── 流星风暴(第三关):球从四条边外侧飞入,朝场内中央区域 ──────────
-function spawnStormOrb() {
+// ── 极速车道(第三关):3 条车道,球从车道顶端飞近,越近越大 ─────────
+function laneX(i) { return G.W * (i + 0.5) / PHYS.RACE_LANES; }
+
+function spawnRaceOrb() {
   const color = ORB_COLORS[(Math.random() * ORB_COLORS.length) | 0];
-  const size = orbSize();
-  const r = size / 2;
+  const lane = (Math.random() * PHYS.RACE_LANES) | 0;
 
   const el = document.createElement('div');
-  el.className = 'egg-orb';
-  el.style.width = el.style.height = `${size}px`;
-  el.style.boxShadow = `
-    inset 0 0 ${size * 0.15}px rgba(0,0,0,0.9),
-    inset 0 0 ${size * 0.04}px rgba(255,255,255,0.2),
-    inset 0 -${size * 0.08}px ${size * 0.16}px rgba(255,255,255,0.12),
-    0 ${size * 0.08}px ${size * 0.16}px rgba(0,0,0,0.6),
-    0 0 ${size * 0.2}px ${color.hex}44`;
+  el.className = 'egg-orb egg-race-orb';
   const img = document.createElement('img');
   img.src = '/liquid-poster.png';
   img.style.cssText = `
@@ -470,28 +488,86 @@ function spawnStormOrb() {
   el.appendChild(spec);
   document.body.appendChild(el);
 
-  // 随机挑一条边,在边外侧生成,瞄准场内中央 50% 区域里的随机一点
-  const edge = (Math.random() * 4) | 0;   // 0上 1右 2下 3左
-  let x, y;
-  if (edge === 0)      { x = Math.random() * G.W; y = -r * 2; }
-  else if (edge === 1) { x = G.W + r * 2; y = Math.random() * G.H; }
-  else if (edge === 2) { x = Math.random() * G.W; y = G.H + r * 2; }
-  else                 { x = -r * 2; y = Math.random() * G.H; }
-  const tx = G.W * (0.25 + Math.random() * 0.5);
-  const ty = G.H * (0.25 + Math.random() * 0.5);
-  const d = Math.hypot(tx - x, ty - y) || 1;
-  const v = G.stormV * (0.85 + Math.random() * 0.3);
-
   const orb = {
-    el, r, x, y, color: color.id,
-    vx: ((tx - x) / d) * v,
-    vy: ((ty - y) / d) * v,
-    rot: 0, dead: false,
-    incoming: true,   // 飞入途中,未被碰过(不受墙约束,穿场而过就算漏)
-    entered: false,   // 是否已完整进过场内(没进过场就不算"漏掉")
+    el, lane, x: laneX(lane), y: -40, color: color.id,
+    dead: false, hit: false,
   };
-  el.style.transform = `translate(${x - r}px, ${y - r}px)`;
+  applyRaceOrb(orb);
   G.orbs.push(orb);
+}
+// 车道球按 y 到判定线的进度线性放大(远小近大,营造迎面而来的纵深感)。
+function applyRaceOrb(o) {
+  const t = Math.max(0, Math.min(1, o.y / G.raceHitY));
+  const size = 34 + t * 96;   // 34px(刚出现,远)→ 130px(到判定线,近)
+  o.r = size / 2;
+  o.el.style.width = o.el.style.height = `${size}px`;
+  o.el.style.opacity = String(0.35 + t * 0.65);
+  const glowHex = (ORB_COLORS.find(c => c.id === o.color) || ORB_COLORS[0]).hex;
+  o.el.style.boxShadow = `
+    inset 0 0 ${size * 0.15}px rgba(0,0,0,0.9),
+    inset 0 0 ${size * 0.04}px rgba(255,255,255,0.2),
+    inset 0 -${size * 0.08}px ${size * 0.16}px rgba(255,255,255,0.12),
+    0 ${size * 0.08}px ${size * 0.16}px rgba(0,0,0,0.6),
+    0 0 ${size * 0.25}px ${glowHex}66`;
+  o.el.style.transform = `translate(${o.x - o.r}px, ${o.y - o.r}px)`;
+}
+// 换道时车道分隔线/判定线元素(懒创建,exitGame 时清掉)
+function ensureRaceUI() {
+  if (!G.laneEls) {
+    G.laneEls = [];
+    for (let i = 1; i < PHYS.RACE_LANES; i++) {
+      const el = document.createElement('div');
+      el.className = 'egg-lane-line';
+      document.body.appendChild(el);
+      G.laneEls.push(el);
+    }
+  }
+  if (!G.hitLineEl) {
+    G.hitLineEl = document.createElement('div');
+    G.hitLineEl.className = 'egg-hit-line';
+    document.body.appendChild(G.hitLineEl);
+  }
+  if (!G.raceBannerEl) {
+    G.raceBannerEl = document.createElement('div');
+    G.raceBannerEl.id = 'egg-race-banner';
+    document.body.appendChild(G.raceBannerEl);
+  }
+}
+function removeRaceUI() {
+  if (G.laneEls) { G.laneEls.forEach(el => el.remove()); G.laneEls = null; }
+  if (G.hitLineEl) { G.hitLineEl.remove(); G.hitLineEl = null; }
+  if (G.raceBannerEl) { G.raceBannerEl.remove(); G.raceBannerEl = null; }
+}
+function showRaceBanner(text) {
+  if (!G.raceBannerEl) return;
+  G.raceBannerEl.textContent = text;
+  G.raceBannerEl.classList.remove('show');
+  void G.raceBannerEl.offsetWidth;
+  G.raceBannerEl.classList.add('show');
+  clearTimeout(G.raceBannerEl._hideTimer);
+  G.raceBannerEl._hideTimer = setTimeout(() => {
+    if (G.raceBannerEl) G.raceBannerEl.classList.remove('show');
+  }, 1400);
+}
+// 车道线 + 判定线跟着顶/底栏边界走(和 #egg-dim 同一套逻辑),分隔线的
+// background-position 按当前速度滚动,制造"向你冲来"的动感。
+function renderRaceUI(dt) {
+  if (!G.laneEls) return;
+  const top = G.chromeTop || 0, bottom = G.chromeBottom || G.H;
+  G.raceScrollY = (G.raceScrollY || 0) + G.raceV * dt;
+  G.laneEls.forEach((el, i) => {
+    // i 是数组下标(0、1…),第 i 条分隔线该在的位置是车道边界 (i+1)/N,
+    // 不是某条车道的中心,所以不能用 laneX()。
+    el.style.left = `${G.W * (i + 1) / PHYS.RACE_LANES}px`;
+    el.style.top = `${top}px`;
+    el.style.height = `${Math.max(0, bottom - top)}px`;
+    el.style.backgroundPositionY = `${G.raceScrollY}px`;
+  });
+  if (G.hitLineEl) {
+    G.hitLineEl.style.left = '0px';
+    G.hitLineEl.style.width = `${G.W}px`;
+    G.hitLineEl.style.top = `${G.raceHitY}px`;
+  }
 }
 
 // ── 消除球之间以及与玩家球的碰撞 ─────────────────────────────────────
@@ -535,12 +611,12 @@ function render() {
   }
 
   // 得分: 写入 DOM，以获得更好的设计感和半透明背景下的可见度
-  const inGamePhase = G.stateName === 'match' || G.stateName === 'rainmatch' || G.stateName === 'storm' || G.stateName === 'over';
+  const inGamePhase = G.stateName === 'match' || G.stateName === 'rainmatch' || G.stateName === 'race' || G.stateName === 'over';
   if (G.score !== 0 || inGamePhase) {
     if (G.scoreEl) {
-      // 第三关在分数旁边显示剩余命数(♥),漏一个少一颗
-      G.scoreEl.textContent = G.stateName === 'storm'
-        ? `${G.score} ${'♥'.repeat(Math.max(0, G.stormLives))}`
+      // 第三关在分数旁边显示 combo 倍率(连续撞对颜色才会 >1x)
+      G.scoreEl.textContent = G.stateName === 'race' && G.raceCombo > 1
+        ? `${G.score} ${G.raceCombo}x`
         : String(G.score);
       G.scoreEl.style.display = 'flex';
       const baseClass = inGamePhase ? 'egg-score-center' : 'egg-score-corner';
@@ -853,134 +929,103 @@ register('rainmatch', {
     // 清理
     G.orbs = G.orbs.filter(o => !o.dead);
 
-    // 分数到阈值 → 进第三关(流星风暴)
+    // 分数到阈值 → 进第三关(极速车道)
     if (G.score >= PHYS.LEVEL3_SCORE) {
-      switchState('storm');
+      switchState('race');
       return;
     }
   },
 });
 
-// 第三关:流星风暴 — 球从四面八方飞入,穿场而过没拦到就漏分;
-// 被碰过的球留在场内四壁弹跳,同色相撞消除。操控沿用第二关的按住直拖。
-register('storm', {
+// 第三关:极速车道 — 3 条车道,水晶球迎面而来越来越大,左右换道拦截。
+// 同色 = 加分(带 combo 倍率),异色 = 扣分且清空 combo,分数归零直接结束。
+// 全程只加速不减速,这是整个彩蛋里唯一"地狱难度"的一关。
+register('race', {
   enter() {
-    G.stormT = 0; G.spawnIn = 0.6;
-    G.stormV = PHYS.STORM_V0;
-    G.stormLives = PHYS.STORM_LIVES;
+    G.raceT = 0; G.spawnIn = 0.9;
+    G.raceV = PHYS.RACE_V0;
+    G.raceLane = 1;
+    G.raceCombo = 1;
+    G.raceHell = false;
+    G.raceIntroT = 0;
+    G.raceScrollY = 0;
     G.holdActive = false;
-    // 清掉第二关残留的球雨
     clearOrbs();
+    ensureRaceUI();
     sfx.level3();
+    // 拉高窗口给赛道留纵深——玩家可能之前手动拉过窗口,这里不管多大都
+    // 统一定到赛道要的高度,退出游戏时 exitGame() 会照旧把窗口复位。
+    if (winApi) {
+      try { winApi.getCurrentWindow().setSize(new winApi.LogicalSize(DEFAULT_WIN_W, PHYS.RACE_WIN_H)); } catch (e) {}
+    }
+    showRaceBanner('HELL RACE — ← / → SWITCH LANES');
+    const p = player();
+    if (p) {
+      p.x = laneX(1); p.y = G.H * PHYS.RACE_HIT_Y_FRAC; p.vx = 0; p.vy = 0;
+    }
+  },
+  exit() {
+    removeRaceUI();
   },
   update(dt) {
-    G.stormT += dt;
-    G.matchT += dt;  // 继续用于 orbSize 缩小
-    G.stormV += PHYS.STORM_ACCEL * dt;  // 越飞越快
+    // 每帧按当前 G.H 重算判定线——进关瞬间窗口才刚开始拉高,resize 事件
+    // 生效前 G.H 还是旧高度,不能只在 enter() 里算一次。
+    G.raceHitY = G.H * PHYS.RACE_HIT_Y_FRAC;
 
-    // 定时从四边生成流星球
-    const spawnEvery = PHYS.STORM_SPAWN_MIN +
-      (PHYS.STORM_SPAWN0 - PHYS.STORM_SPAWN_MIN) * Math.exp(-G.stormT / PHYS.STORM_RAMP);
-    G.spawnIn -= dt;
-    if (G.spawnIn <= 0) { spawnStormOrb(); G.spawnIn = spawnEvery; }
-
-    // 玩家球:与第二关同一套按住直拖(见 rainmatch 里的详细注释)
     const p = player();
-    if (G.holdActive) {
-      const safeDt = Math.max(dt, 1 / 240);
-      const tx = Math.max(p.r, Math.min(G.W - p.r, G.holdTargetX));
-      const ty = Math.max(p.r, Math.min(G.H - p.r, G.holdTargetY));
-      let vx = (tx - p.x) / safeDt, vy = (ty - p.y) / safeDt;
-      const sp = Math.hypot(vx, vy), cap = PHYS.MAX_LAUNCH * 1.2;
-      if (sp > cap) { vx *= cap / sp; vy *= cap / sp; }
-      p.vx = vx; p.vy = vy;
-      p.x = tx; p.y = ty;
-      p.rot += ((p.vx * PHYS.ROLL + p.vy * PHYS.ROLL * 0.35) / p.r) * dt;
-    } else {
-      steer(dt);
-      stepBall(p, dt); bounceWalls(p);
+    if (p) {
+      const targetX = laneX(G.raceLane);
+      p.x += (targetX - p.x) * Math.min(1, dt * PHYS.RACE_LANE_SLIDE);
+      p.y = G.raceHitY;
+      p.rot += dt * 3.2;   // 匀速滚动,营造车轮飞转的前冲感
+      applyBall(p);
     }
 
-    // 流星球物理
+    G.raceIntroT += dt;
+    renderRaceUI(dt);
+    // 窗口刚拉高、banner 还在读,给玩家 1.1s 准备时间,不生成球也不计速
+    if (G.raceIntroT < 1.1) return;
+
+    G.raceT += dt;
+    G.raceV += PHYS.RACE_ACCEL * dt;   // 只加速不减速,这就是"地狱"的核心
+    if (!G.raceHell && G.raceT > PHYS.RACE_HELL_AT) {
+      G.raceHell = true;
+      showRaceBanner('HELL MODE');
+      sfx.hell();
+    }
+
+    const spawnEvery = PHYS.RACE_SPAWN_MIN +
+      (PHYS.RACE_SPAWN0 - PHYS.RACE_SPAWN_MIN) * Math.exp(-G.raceT / PHYS.RACE_RAMP);
+    G.spawnIn -= dt;
+    if (G.spawnIn <= 0) {
+      spawnRaceOrb();
+      // 地狱模式:有概率同一时间再补一颗别的车道的球,逼你二选一
+      if (G.raceHell && Math.random() < 0.45) spawnRaceOrb();
+      G.spawnIn = spawnEvery;
+    }
+
     for (const o of G.orbs) {
-      if (o.dead) continue;
-      o.x += o.vx * dt; o.y += o.vy * dt;
-      o.rot += ((o.vx * PHYS.ROLL + o.vy * PHYS.ROLL * 0.35) / o.r) * dt;
-      if (o.incoming) {
-        // 飞入中的球不受墙约束:进得来,也穿得出去
-        const inside = o.x - o.r > 0 && o.x + o.r < G.W && o.y - o.r > 0 && o.y + o.r < G.H;
-        if (inside) o.entered = true;
-        const gone = o.x < -o.r * 3 || o.x > G.W + o.r * 3 ||
-                     o.y < -o.r * 3 || o.y > G.H + o.r * 3;
-        if (o.entered && gone) {
-          // 穿场而过没被拦下 → 漏 1 分 + 折 1 条命。命才是第三关真正的输法:
-          // 进关时带着 200 分,靠扣分输要漏 200 个球,等于没有失败压力;
-          // 命数上限把"漏球"变回有代价的事。
-          missFlash(o.x, o.y);
-          removeOrb(o);
-          G.score -= 1;
-          G.stormLives -= 1;
+      if (o.dead || o.hit) continue;
+      o.y += G.raceV * dt;
+      applyRaceOrb(o);
+      if (o.y < G.raceHitY) continue;
+      // 到判定线了:该拦的拦,该扣的扣;不在这条车道上就悄悄放过,不加不扣
+      o.hit = true;
+      if (o.lane === G.raceLane) {
+        if (o.color === p.color) {
+          G.raceCombo = Math.min(PHYS.RACE_COMBO_MAX, G.raceCombo + 1);
+          G.score += PHYS.RACE_HIT_SCORE * G.raceCombo;
+          sfx.match();
+        } else {
+          G.raceCombo = 1;
+          G.score -= PHYS.RACE_MISS_SCORE;
+          missFlash(o.x, G.raceHitY);
           sfx.miss();
-          if (G.stormLives <= 0 || G.score <= 0) { switchState('over'); return; }
-        }
-      } else {
-        // 被碰过的球:四壁都弹,加阻力慢慢停(不会再离场)
-        bounceWallsOrb(o);
-        const f = Math.exp(-PHYS.ORB_DRAG * dt);
-        o.vx *= f; o.vy *= f;
-      }
-    }
-
-    // 玩家球 vs 流星球碰撞(与第二关同一套弹性碰撞)
-    for (const o of G.orbs) {
-      if (o.dead) continue;
-      const dx = o.x - p.x, dy = o.y - p.y;
-      const dist = Math.hypot(dx, dy), minD = p.r + o.r;
-      if (dist > 0 && dist < minD) {
-        const nx = dx / dist, ny = dy / dist;
-        const ma = p.r * p.r, mb = o.r * o.r;
-        const overlap = minD - dist;
-        p.x -= nx * overlap * (mb / (ma + mb)); p.y -= ny * overlap * (mb / (ma + mb));
-        o.x += nx * overlap * (ma / (ma + mb)); o.y += ny * overlap * (ma / (ma + mb));
-        const dvx = p.vx - o.vx, dvy = p.vy - o.vy;
-        const dvn = dvx * nx + dvy * ny;
-        if (dvn > 0) {
-          const j = dvn * 2 * ma * mb / (ma + mb) * PHYS.BALL_REST;
-          p.vx -= (j / ma) * nx; p.vy -= (j / ma) * ny;
-          o.vx += (j / mb) * nx; o.vy += (j / mb) * ny;
-          sfx.clink(Math.min(1, Math.hypot(p.vx, p.vy) / 700 + 0.3));
-        }
-        // 被玩家拦下 → 留在场内
-        if (o.incoming) o.incoming = false;
-      }
-    }
-
-    // 流星球之间:同色消除,异色弹开(双方都被"拦下")。
-    // 两颗都没被碰过的飞入球互相穿过、不发生任何作用 —— 所有球都瞄着
-    // 中央区域飞,半路互撞的概率极高,若放任它们自动同色消除,玩家什么都
-    // 不做分数也会自己往上涨(实测 25 秒白拿 90+ 分,差点躺赢);也避免
-    // 未拦截球互相弹飞后出界、让玩家背没碰过的锅。
-    const alive = G.orbs.filter(o => !o.dead);
-    for (let i = 0; i < alive.length; i++) {
-      for (let j = i + 1; j < alive.length; j++) {
-        const a = alive[i], b = alive[j];
-        if (a.incoming && b.incoming) continue;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy), minD = a.r + b.r;
-        if (dist > 0 && dist < minD) {
-          if (a.color === b.color) {
-            matchOrbs(a, b);
-          } else {
-            collideOrbs(a, b);
-            sfx.bounce(Math.hypot(a.vx, a.vy) / 500);
-            if (a.incoming) a.incoming = false;
-            if (b.incoming) b.incoming = false;
-          }
+          if (G.score <= 0) { removeOrb(o); switchState('over'); return; }
         }
       }
+      removeOrb(o);
     }
-
-    // 清理
     G.orbs = G.orbs.filter(o => !o.dead);
 
     // 赢了:分数到阈值,搞笑收场(不是失败,是"我服了你了")
@@ -1067,7 +1112,7 @@ function enterGame(el) {
         <line x1="19" y1="12" x2="5" y2="12"></line>
         <polyline points="12 19 5 12 12 5"></polyline>
       </svg>
-      返回主界面
+      Back
     `;
     exitBtn.onclick = () => exitGame();
     document.body.appendChild(exitBtn);
@@ -1112,6 +1157,10 @@ function exitGame() {
   if (G.scoreEl) { G.scoreEl.remove(); G.scoreEl = null; }
   // 移除退出按钮
   if (G.exitBtn) { G.exitBtn.remove(); G.exitBtn = null; }
+  // 移除第三关的车道线/判定线/banner——exitGame 可能直接由 Esc 触发(比如
+  // 正在 race 状态里按 Esc),不会经过 race 自己的 exit() 钩子,得在这里
+  // 兜底清一次(removeRaceUI 本身是幂等的,重复调用无副作用)。
+  removeRaceUI();
   // 注销 resize 监听
   if (G.resizeHandler) { window.removeEventListener('resize', G.resizeHandler); G.resizeHandler = null; }
   document.body.classList.remove('egg-mode', 'egg-playing');
@@ -1130,21 +1179,31 @@ function exitGame() {
 }
 function onKey(e) {
   if (e.key === 'Escape') { exitGame(); return; }
+  // 第三关:左右键离散换道(一按一格),不是连续按力——e.repeat 是系统按住
+  // 自动重复触发的,直接忽略,不然按住不放会一路窜到底,失去"选道"的手感。
+  if (G.stateName === 'race' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    if (e.repeat) return;
+    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+    G.raceLane = Math.max(0, Math.min(PHYS.RACE_LANES - 1, G.raceLane + dir));
+    return;
+  }
   if (e.key.startsWith('Arrow')) { G.keys.add(e.key); e.preventDefault(); }
 }
 function onKeyUp(e) { G.keys.delete(e.key); }
 
 // 游戏中再次抓球蓄力
 function onGameGrab(e) {
+  if (G.stateName === 'race') return;   // 第三关只用左右方向键换道,鼠标不管
   const p = player();
   if (!p || e.button !== 0) return;
   if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > p.r + 24) return;
   e.preventDefault();   // 不阻止的话,横扫式拖拽会被浏览器当成"选中文字"
 
-  // 第二/三关(球雨消除/流星风暴):按住直接拖着球走,不是拉弓蓄力松手弹射。
-  // 拖动速度/角度由各自的 update() 每帧从鼠标位移里算出来,
+  // 第二关(球雨消除):按住直接拖着球走,不是拉弓蓄力松手弹射。
+  // 拖动速度/角度由 update() 每帧从鼠标位移里算出来,
   // 天然决定撞到球时那颗球飞出去的力度和方向。
-  if (G.stateName === 'rainmatch' || G.stateName === 'storm') {
+  if (G.stateName === 'rainmatch') {
     G.holdActive = true;
     G.holdTargetX = e.clientX; G.holdTargetY = e.clientY;
     const move = (ev) => {
