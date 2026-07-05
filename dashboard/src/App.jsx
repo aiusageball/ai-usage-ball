@@ -424,7 +424,7 @@ const SettingsModal = ({
 
               <div className="setting-section">
                 <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Usage Ball v0.1.0</p>
+                <p className="section-desc">AI Usage Ball v0.2.0</p>
                 <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
               </div>
 
@@ -1226,7 +1226,7 @@ function App() {
         {/* Tactile Ando Concrete Bottom Border Accent */}
         <div className="popover-footer-accent">
           <span className="credits-readout">{currentTime}</span>
-          <span className="branding-readout">AI Usage Ball</span>
+          <span className="branding-readout branding-link" onClick={() => openUrl('https://aiusageball.com')} title="aiusageball.com">AI Usage Ball</span>
         </div>
       </div>
 

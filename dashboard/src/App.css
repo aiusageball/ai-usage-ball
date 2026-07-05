@@ -539,6 +539,16 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   opacity: 0.8;
 }
 
+.popover-footer-accent .branding-link {
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.popover-footer-accent .branding-link:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 /* ==========================================
    Settings Modal & Button
    ========================================== */
