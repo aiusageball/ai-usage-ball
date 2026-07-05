@@ -81,7 +81,7 @@ const G = {
   score: 0,
   bgAlpha: 0, matchT: 0, spawnIn: 0,
   rainT: 0, fallV: 0,
-  stormT: 0, stormV: 0, stormLives: 0,
+  stormT: 0, stormV: 0, stormLives: 0, lifeLostUntil: 0,
   keys: new Set(), drag: null,
   suppressClick: false,
   audio: null,
@@ -360,6 +360,28 @@ function removeOrb(o) {
   o.dead = true;
   o.el.remove();
 }
+// 漏球时在"逃出去的那个边"上打一个红色的圈,并让比分抖一下——不然球一旦
+// 判定漏球时早就飞出屏幕外老远了(尤其第三关四面八方都能飞出去,不像第二关
+// 永远从底边掉出去那么好盯),玩家完全看不到是哪颗球、从哪漏的,只听见一声
+// 音效、看见命数少了一颗,搞不清发生了什么。把位置钳在场地边缘上,保证
+// 这个提示总是画在看得见的地方。
+function missFlash(x, y) {
+  const fx = Math.max(0, Math.min(G.W, x));
+  const fy = Math.max(0, Math.min(G.H, y));
+  const el = document.createElement('div');
+  el.className = 'egg-miss-ping';
+  const size = 90;
+  el.style.left = `${fx - size / 2}px`;
+  el.style.top = `${fy - size / 2}px`;
+  el.style.width = el.style.height = `${size}px`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 550);
+  // 不直接在这里 classList.add ——render() 每帧都会把 scoreEl.className 整个
+  // 重写一遍(拼 baseClass+negativeClass),下一帧就把这个 class 冲掉了,
+  // 动画播放不出来。改成记一个"到期时间戳",让 render() 自己判断要不要
+  // 把这个 class 拼进当帧的 className 里。
+  G.lifeLostUntil = performance.now() + 350;
+}
 function matchOrbs(a, b) {
   // 同色消除:发光 → 缩小淡出
   a.dead = true; b.dead = true;
@@ -523,7 +545,8 @@ function render() {
       G.scoreEl.style.display = 'flex';
       const baseClass = inGamePhase ? 'egg-score-center' : 'egg-score-corner';
       const negativeClass = G.score < 0 ? ' negative' : '';
-      G.scoreEl.className = baseClass + negativeClass;
+      const lifeLostClass = performance.now() < G.lifeLostUntil ? ' egg-life-lost' : '';
+      G.scoreEl.className = baseClass + negativeClass + lifeLostClass;
     }
   } else {
     if (G.scoreEl) G.scoreEl.style.display = 'none';
@@ -775,6 +798,7 @@ register('rainmatch', {
       }
       // 底边:任何球碰到就出去,扣 1 分
       if (o.y - o.r > G.H) {
+        missFlash(o.x, G.H);
         removeOrb(o);
         G.score -= 1; sfx.miss();
         if (G.score <= 0) { switchState('over'); return; }
@@ -892,6 +916,7 @@ register('storm', {
           // 穿场而过没被拦下 → 漏 1 分 + 折 1 条命。命才是第三关真正的输法:
           // 进关时带着 200 分,靠扣分输要漏 200 个球,等于没有失败压力;
           // 命数上限把"漏球"变回有代价的事。
+          missFlash(o.x, o.y);
           removeOrb(o);
           G.score -= 1;
           G.stormLives -= 1;
