@@ -1,19 +1,40 @@
 {
-  "updated": "2026-07-05",
+  "updated": "2026-07-11",
   "items": [
+    {
+      "date": "2026-07-09",
+      "tag": "claude",
+      "title": "Anthropic finds a hidden \"thinking space\" inside Claude",
+      "summary": "A new interpretability tool called the J-lens uncovered a workspace where Claude holds concepts it never puts into words, which researchers can use to catch hidden goals or fabricated reasoning.",
+      "url": "https://www.anthropic.com/research/global-workspace"
+    },
+    {
+      "date": "2026-07-09",
+      "tag": "codex",
+      "title": "OpenAI launches GPT-5.6 and folds Codex into ChatGPT",
+      "summary": "The new GPT-5.6 model family powers a fresh ChatGPT Work agent, and the standalone Codex app has merged into the ChatGPT desktop app as a dedicated coding tab.",
+      "url": "https://openai.com/index/gpt-5-6/"
+    },
+    {
+      "date": "2026-07-09",
+      "tag": "codex",
+      "title": "Codex Remote and Goal mode reach general availability",
+      "summary": "You can now start or steer Codex sessions from the ChatGPT mobile app and set persistent, multi-day objectives across the Codex CLI, IDE extension, and app.",
+      "url": "https://openai.com/index/work-with-codex-from-anywhere/"
+    },
+    {
+      "date": "2026-07-09",
+      "tag": "antigravity",
+      "title": "Gemini's AlphaEvolve agent reaches general availability",
+      "summary": "The Gemini-powered algorithm-discovery agent is now GA on Google Cloud, letting businesses hand it a baseline algorithm and goals to autonomously find optimized code.",
+      "url": "https://cloud.google.com/blog/products/ai-machine-learning/alphaevolve-is-available-for-everyone"
+    },
     {
       "date": "2026-07-05",
       "tag": "claude",
       "title": "Claude Sonnet 5 is now the default model in Claude Code",
       "summary": "Ships with a native 1M-token context window and promotional $2/$10-per-Mtok pricing through August 31.",
       "url": "https://www.anthropic.com/news"
-    },
-    {
-      "date": "2026-07-01",
-      "tag": "claude",
-      "title": "Claude Fable 5 is back online worldwide",
-      "summary": "Restored across Claude.ai, the API, Claude Code and Cowork after a brief export-control pause was lifted on June 30.",
-      "url": "https://www.anthropic.com/news/redeploying-fable-5"
     },
     {
       "date": "2026-07-03",
@@ -23,18 +44,11 @@
       "url": "https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan"
     },
     {
-      "date": "2026-06-30",
-      "tag": "antigravity",
-      "title": "Gemini 3.5 Flash lands with a 1M-token window",
-      "summary": "Tuned for coding and agent workflows, rolling out broadly across Google's products.",
-      "url": "https://llm-stats.com/llm-updates"
-    },
-    {
-      "date": "2026-06-28",
-      "tag": "antigravity",
-      "title": "Gemini passes 900 million monthly users",
-      "summary": "Google is leaning further into agentic features like Daily Brief and Spark, a background agent that keeps working after you step away.",
-      "url": "https://www.forbes.com/sites/janakirammsv/2026/05/21/google-io-2026-turned-gemini-into-an-agent-platform/"
+      "date": "2026-07-01",
+      "tag": "claude",
+      "title": "Claude Fable 5 is back online worldwide",
+      "summary": "Restored across Claude.ai, the API, Claude Code and Cowork after a brief export-control pause was lifted on June 30.",
+      "url": "https://www.anthropic.com/news/redeploying-fable-5"
     }
   ]
 }
