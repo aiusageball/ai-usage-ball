@@ -3,8 +3,43 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AI Usage Ball — your AI limits, always in sight</title>
-<meta name="description" content="A living crystal ball on your Mac desktop that shows how much Claude, Codex and Antigravity you have left — at a glance, in real time. One-time A$9.99, 30-day free trial." />
+<title>AI Usage Ball — See your Claude and Codex limits before you hit them</title>
+<meta name="description" content="A local macOS menu bar app that keeps Claude, Codex / ChatGPT, and Antigravity usage limits and reset times visible while you work. 30-day free trial, then A$9.99 once." />
+<link rel="canonical" href="https://aiusageball.com/" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://aiusageball.com/" />
+<meta property="og:title" content="AI Usage Ball — See your AI limits before you hit them" />
+<meta property="og:description" content="A local macOS app for keeping Claude, Codex / ChatGPT, and Antigravity limits and reset times visible while you work." />
+<meta property="og:image" content="https://aiusageball.com/liquid-poster.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="AI Usage Ball — See your AI limits before you hit them" />
+<meta name="twitter:description" content="A local macOS app for keeping Claude, Codex / ChatGPT, and Antigravity limits and reset times visible while you work." />
+<meta name="twitter:image" content="https://aiusageball.com/liquid-poster.png" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "AI Usage Ball",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS 12 or later, Apple Silicon",
+  "description": "A local macOS app that keeps Claude, Codex / ChatGPT, and Antigravity usage limits and reset times visible while you work.",
+  "url": "https://aiusageball.com/",
+  "downloadUrl": "https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg",
+  "image": "https://aiusageball.com/liquid-poster.png",
+  "offers": {
+    "@type": "Offer",
+    "price": "9.99",
+    "priceCurrency": "AUD",
+    "category": "one-time purchase"
+  },
+  "featureList": [
+    "Claude usage limits and reset countdowns",
+    "Codex / ChatGPT usage limits and reset countdowns",
+    "Antigravity usage limits and reset countdowns",
+    "Local-only usage readers"
+  ]
+}
+</script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2244%22 fill=%22%23ff8c00%22/></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -66,6 +101,10 @@
   .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;align-items:center}
   .cta-note{font-size:13px;color:var(--muted);margin-top:16px}
   .cta-note b{color:var(--txt);font-weight:600}
+  .trust-row{display:flex;justify-content:center;gap:20px;flex-wrap:wrap;margin-top:22px;color:var(--muted);font-size:13px}
+  .trust-row span{display:inline-flex;align-items:center;gap:7px}
+  .trust-row b{color:var(--txt);font-weight:600}
+  .orb-context{margin:24px auto 0;color:var(--muted);font-size:14px;max-width:620px}
 
   /* ORBS */
   /* ── 与 app 完全一致的水晶球(原样移植 App.css)── */
@@ -139,24 +178,6 @@
   details[open] summary::after{content:"–"}
   details p{color:var(--muted);font-size:14.5px;padding:0 0 18px}
 
-  /* NEWS */
-  .news-list{max-width:720px;margin:0 auto;display:grid;gap:12px}
-  .news-item{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-    padding:18px 22px;display:block;transition:.15s}
-  .news-item:hover{border-color:rgba(255,255,255,.18);transform:translateY(-1px)}
-  .news-item .meta{display:flex;gap:10px;align-items:center;margin-bottom:7px}
-  .news-item .tag{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
-    letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:6px}
-  .news-item .tag.claude{background:rgba(255,140,0,.12);color:var(--claude)}
-  .news-item .tag.codex{background:rgba(239,68,68,.12);color:var(--codex)}
-  .news-item .tag.antigravity{background:rgba(6,182,212,.12);color:var(--anti)}
-  .news-item .tag.general{background:rgba(255,255,255,.08);color:var(--muted)}
-  .news-item .date{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted)}
-  .news-item h3{font-size:15.5px;font-weight:600;margin-bottom:4px;color:var(--txt)}
-  .news-item p{color:var(--muted);font-size:13.5px;margin:0}
-  .news-empty{text-align:center;color:var(--muted);font-size:14px}
-  .news-updated{text-align:center;font-size:12px;color:var(--muted);opacity:.6;margin-top:20px}
-
   footer{border-top:1px solid var(--line);padding:42px 0;text-align:center;color:var(--muted);font-size:13.5px}
   footer .logo{justify-content:center;margin-bottom:14px;color:var(--txt)}
   .privacy{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);
@@ -181,15 +202,15 @@
 <header class="hero">
   <div class="hero-glow"></div>
   <div class="wrap">
-    <span class="badge"><span class="led"></span> For macOS · live usage sync</span>
-    <h1>Your AI limits,<br><span class="grad">always in sight.</span></h1>
-    <p class="lead">A living crystal ball that sits on your desktop and shows how much
-      <b>Claude</b>, <b>Codex</b> and <b>Antigravity</b> you have left — at a glance, in real time.</p>
+    <span class="badge"><span class="led"></span> macOS menu bar app · local-only usage reads</span>
+    <h1>Know your AI limits<br><span class="grad">before they stop your flow.</span></h1>
+    <p class="lead">Keep <b>Claude</b>, <b>Codex / ChatGPT</b>, and <b>Antigravity</b> usage limits and reset times visible while you work, so a session never ends as a surprise.</p>
     <div class="cta-row">
-      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Download for macOS</a>
-      <a href="#pricing" class="btn btn-ghost">See pricing</a>
+      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Start free on macOS</a>
+      <a href="https://github.com/aiusageball/ai-usage-ball" class="btn btn-ghost">View source on GitHub</a>
     </div>
-    <div class="cta-note"><b>30-day free trial.</b> Then A$9.99 once — no subscription.</div>
+    <div class="cta-note"><b>30-day free trial.</b> No card required. Then A$9.99 once — no subscription.</div>
+    <div class="trust-row"><span><b>macOS 12+</b></span><span><b>Apple Silicon</b></span><span><b>Usage stays on your Mac</b></span></div>
 
     <!-- ORBS -->
     <div class="orbs">
@@ -274,6 +295,7 @@
         <div class="orb-cap"><div class="nm">ANTIGRAVITY</div><div class="pc" style="color:var(--anti)">100% left</div></div>
       </div>
     </div>
+    <p class="orb-context">Each gauge shows what is left and when that allowance resets. Leave it in the menu bar or on your desktop while you code.</p>
   </div>
 </header>
 
@@ -282,22 +304,22 @@
   <div class="wrap">
     <div class="sec-head">
       <div class="eyebrow">Why you'll keep it open</div>
-      <h2>Stop guessing how much you have left</h2>
-      <p>One glance tells you whether you can keep going — no dashboards, no logins, no tab-switching.</p>
+      <h2>Check once. Keep working.</h2>
+      <p>One glance tells you whether you can keep going, switch tools, or take a break. No provider dashboards, logins, or tab-switching.</p>
     </div>
     <div class="features">
-      <div class="card"><div class="ic">🔮</div><h3>Lives on your desktop</h3>
-        <p>Floating liquid orbs that stay visible while you work. The liquid level <em>is</em> your remaining quota.</p></div>
+      <div class="card"><div class="ic">🔮</div><h3>Visible while you work</h3>
+        <p>Floating liquid gauges that stay on your desktop or in the menu bar. The liquid level is your remaining quota.</p></div>
       <div class="card"><div class="ic">⚡</div><h3>Three tools, one glance</h3>
-        <p>Claude, Codex / ChatGPT and Antigravity side by side — session limits, weekly limits and reset timers.</p></div>
-      <div class="card"><div class="ic">🔄</div><h3>Real-time & resilient</h3>
-        <p>Reads your live usage every minute. Built to never silently break or log you out.</p></div>
+        <p>Claude, Codex / ChatGPT, and Antigravity side by side, including session limits, weekly limits, and reset timers where available.</p></div>
+      <div class="card"><div class="ic">↻</div><h3>Refreshes from your Mac</h3>
+        <p>Reads usage from your existing signed-in sessions and refreshes it locally while you work.</p></div>
       <div class="card"><div class="ic">⌚</div><h3>On your wrist <span style="font-size:11px;font-weight:600;color:var(--anti);background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.3);padding:2px 8px;border-radius:999px;vertical-align:middle;margin-left:4px">In development</span></h3>
         <p>The same orbs on Apple Watch — check your limits without touching your Mac. Coming in a future update.</p></div>
       <div class="card"><div class="ic">🔒</div><h3>Stays on your Mac</h3>
         <p>Usage is read locally from your own sessions. Nothing is sent to any server but the providers' own.</p></div>
       <div class="card"><div class="ic">💸</div><h3>Pay once</h3>
-        <p>No subscription, no account. A single A$9.99 unlocks everything, forever.</p></div>
+        <p>No subscription and no account. A single A$9.99 unlocks the app permanently.</p></div>
     </div>
   </div>
 </section>
@@ -351,20 +373,6 @@
   </div>
 </section>
 
-<section id="news" style="background:var(--bg2)">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="eyebrow">Stay in the loop</div>
-      <h2>AI news</h2>
-      <p>A few things worth knowing about Claude, Codex and Gemini — updated daily.</p>
-    </div>
-    <div class="news-list" id="news-list">
-      <div class="news-empty">Loading…</div>
-    </div>
-    <div class="news-updated" id="news-updated"></div>
-  </div>
-</section>
-
 <!-- DOWNLOAD / FOOTER -->
 <section id="download" style="text-align:center">
   <div class="wrap">
@@ -374,10 +382,7 @@
       <p>macOS 12+ · Apple Silicon (M1 or later)</p>
     </div>
     <div class="cta-row">
-      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Download for macOS</a>
-    </div>
-    <div class="dl-count-container" style="font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 12px; margin-bottom: 24px; display: none;">
-      🚀 Downloaded <span class="dl-count-number" style="font-weight: 600; color: #fff;">...</span> times by macOS users
+      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Start 30-day free trial</a>
     </div>
     <div class="privacy">🔒 Reads usage locally · nothing leaves your Mac</div>
   </div>
@@ -472,56 +477,6 @@
     return false;
   }
 
-  // ── Fetch GitHub Download Count
-  fetch('https://api.github.com/repos/aiusageball/ai-usage-ball/releases')
-    .then(r => r.json())
-    .then(data => {
-      let total = 0;
-      data.forEach(release => {
-        release.assets.forEach(asset => {
-          total += asset.download_count || 0;
-        });
-      });
-      if (total > 0) {
-        document.querySelectorAll('.dl-count-number').forEach(el => el.textContent = total);
-        document.querySelectorAll('.dl-count-container').forEach(el => el.style.display = 'block');
-      }
-    })
-    .catch(e => console.error('Failed to fetch download count:', e));
-
-  // ── AI News section (news.json is refreshed daily) ──
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-  }
-  function formatNewsDate(iso) {
-    try {
-      const d = new Date(iso + 'T00:00:00Z');
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    } catch (e) { return iso; }
-  }
-  fetch('news.json?v=' + Date.now())
-    .then(r => r.json())
-    .then(data => {
-      const items = Array.isArray(data) ? data : (data.items || []);
-      const list = document.getElementById('news-list');
-      if (!items.length) { list.innerHTML = '<div class="news-empty">Check back soon.</div>'; return; }
-      list.innerHTML = items.slice(0, 8).map(n => `
-        <a class="news-item" href="${escapeHtml(n.url || '#')}" target="_blank" rel="noopener">
-          <div class="meta">
-            <span class="tag ${escapeHtml(n.tag || 'general')}">${escapeHtml(n.tag || 'AI')}</span>
-            <span class="date">${formatNewsDate(n.date)}</span>
-          </div>
-          <h3>${escapeHtml(n.title)}</h3>
-          <p>${escapeHtml(n.summary || '')}</p>
-        </a>`).join('');
-      if (data.updated) {
-        document.getElementById('news-updated').textContent = 'Last updated ' + formatNewsDate(data.updated);
-      }
-    })
-    .catch(() => {
-      const list = document.getElementById('news-list');
-      if (list) list.innerHTML = '<div class="news-empty">Check back soon.</div>';
-    });
 </script>
 </body>
 </html>
