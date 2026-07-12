@@ -424,7 +424,7 @@ const SettingsModal = ({
 
               <div className="setting-section">
                 <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Usage Ball v0.2.0</p>
+                <p className="section-desc">AI Usage Ball v0.2.1</p>
                 <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
               </div>
 
@@ -440,7 +440,7 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0 }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null }) => {
   const radius = 65;
   const circumference = 2 * Math.PI * radius;
   const validPct = Math.max(0, Math.min(100, percentage));
@@ -638,7 +638,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
 
   return (
     <div className="orb-wrapper orb-intro-appear" style={{ animationDelay: `${introDelay}ms` }} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      <div className={`orb-glass-breather ${offline ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
+      <div className={`orb-glass-breather ${offline || needsLogin ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
         <div
           className="orb-glass"
           ref={orbGlassRef}
@@ -752,9 +752,18 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         </svg>
 
         {/* Digital Timer */}
-        <div className="orb-timer-wrapper" style={{ opacity: revealed ? 1 : 0 }}>
+        <div className="orb-timer-wrapper" style={{ opacity: (revealed || needsLogin) ? 1 : 0 }}>
+          {needsLogin ? (
+            <span
+              className="orb-timer orb-login-hint"
+              onClick={onNeedsLogin || undefined}
+              style={{ cursor: onNeedsLogin ? 'pointer' : 'default' }}
+              title="Open claude.ai to sign in"
+            >SIGN&nbsp;IN</span>
+          ) : (
           <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
-          {secondaryTimer ? (
+          )}
+          {needsLogin ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>{secondaryTimer}</span>
           ) : resetCredits != null ? (
             <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>↺ {resetCredits} LEFT</span>
@@ -783,7 +792,14 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
             </button>
           )}
         </div>
-        {offline ? (
+        {needsLogin ? (
+          <p
+            className="orb-subtitle orb-offline orb-login-cta"
+            onClick={onNeedsLogin || undefined}
+            style={{ cursor: onNeedsLogin ? 'pointer' : 'default' }}
+            title="Open claude.ai to sign in"
+          >⚠ LOG IN TO CLAUDE.AI</p>
+        ) : offline ? (
           <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
         ) : hasSecondary ? (
           <div style={{ display: 'flex', flexDirection: stackLabels ? 'column' : 'row', justifyContent: 'center', alignItems: 'center', gap: stackLabels ? '4px' : '8px' }}>
@@ -815,6 +831,7 @@ function App() {
     claude: {
       provider: "Claude",
       loaded: false,
+      needsLogin: false,
       rate_limit_pct: 0.0,
       rate_limit_pct_secondary: 0.0,
       status: "NORMAL",
@@ -1179,6 +1196,8 @@ function App() {
             dataLoaded={!!data.claude.loaded}
             introOrder={0}
             ambientPulse={ambientOrb === 'claude'}
+            needsLogin={!!data.claude.needsLogin && !data.claude.loaded}
+            onNeedsLogin={() => openUrl('https://claude.ai')}
             onPopOut={() => launchWidget('claude')}
           />
 

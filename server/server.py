@@ -124,6 +124,7 @@ state = {
         "resetsAt_secondary": "",
         "updatedAt": "",      # ISO time of last successful poll
         "stale": False,       # True when we haven't refreshed for a while (e.g. 429)
+        "needsLogin": False,  # True 当 cookie+OAuth 都拿不到 → 前端提示去登录 claude.ai
         "logs": []
     },
     "codex": {
@@ -353,9 +354,14 @@ async def poll_claude_oauth():
         try:
             usage, source = await asyncio.to_thread(fetch_claude_usage_resilient)
             if not usage:
-                # cookie + OAuth 都拿不到(浏览器没登录 claude.ai 且 token 也失效)
+                # cookie + OAuth 都拿不到(浏览器没登录 claude.ai 且 token 也失效)。
+                # 置 needsLogin,前端 Claude 球据此显示"登录 claude.ai"的可点提示,
+                # 而不是干等一个永远不来的数字。只有连续多次失败才置(避免冷启动
+                # 时浏览器/钥匙串还没就绪就误报),给用户一个明确的可操作出口。
                 if _claude_last_ok and time.time() - _claude_last_ok > CLAUDE_STALE_AFTER_SEC:
                     state["claude"]["stale"] = True
+                if fail_count >= 2:
+                    state["claude"]["needsLogin"] = True
                 _log_claude("⚠ 取不到用量 — 请在浏览器登录 claude.ai", dedup=True)
                 fail_count += 1
                 await asyncio.sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
@@ -378,6 +384,7 @@ async def poll_claude_oauth():
             fail_count = 0
             state["claude"]["loaded"] = True
             state["claude"]["stale"] = False
+            state["claude"]["needsLogin"] = False
             state["claude"]["tokenExpired"] = False
             state["claude"]["updatedAt"] = datetime.now(timezone.utc).isoformat()
             _log_claude(f"Claude({source}): session {fh_util:.0f}% used, weekly {sd_util:.0f}% used",

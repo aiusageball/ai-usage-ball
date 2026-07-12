@@ -69,6 +69,12 @@ cp -RL "$DIST_DIR/aipulse-server" "$RESOURCES"
 
 echo "==> 3/6 Signing all 135+ nested Mach-O binaries (Tauri resources are not auto-signed)"
 find "$RESOURCES" -type f \( -name "*.dylib" -o -name "*.so" -o -perm -u+x \) | while read -r f; do
+  # Skip the framework's top-level Python binary: codesign calls it "ambiguous
+  # (could be app or framework)" and exits non-zero (aborting under set -e).
+  # It's a duplicate of Versions/3.14/Python (which IS signed by this loop),
+  # and step 5 replaces this path with a symlink to Versions/Current/Python
+  # anyway — so signing it here is both impossible and pointless.
+  case "$f" in */Python.framework/Python) continue ;; esac
   if file "$f" | grep -q "Mach-O"; then
     codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$f"
   fi
@@ -107,7 +113,7 @@ cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 DMG_DIR="$SRC_TAURI/target/release/bundle/dmg"
 mkdir -p "$DMG_DIR"
-DMG="$DMG_DIR/AI Usage Ball_0.1.0_aarch64.dmg"
+DMG="$DMG_DIR/AI Usage Ball_${APP_VERSION}_aarch64.dmg"
 rm -f "$DMG"
 hdiutil create -volname "AI Usage Ball" -srcfolder "$STAGING" -ov -format UDZO "$DMG"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"

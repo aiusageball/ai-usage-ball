@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.2.1] — 2026-07-12
+
+### Added
+- The Claude orb now shows a clickable **"SIGN IN"** prompt when it can't read your usage because you're signed out of claude.ai — click it to open claude.ai and log back in, instead of the orb sitting empty. (Staying logged in to claude.ai in your browser is what keeps Claude usage flowing reliably.)
+
 ## [0.2.0] — 2026-07-05
 
 ### Added

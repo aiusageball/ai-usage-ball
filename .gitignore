@@ -35,3 +35,4 @@ WatchAppSource/
 # PyInstaller sidecar (55MB onedir build, from server/ — see README)
 dashboard/src-tauri/binaries/
 dashboard/src-tauri/resources/
+server/aipulse-server.spec

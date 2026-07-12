@@ -265,6 +265,28 @@
   letter-spacing: 0.12em;
 }
 
+/* Claude 未登录:可点击的登录提示(球内 SIGN IN 和标签下的 CTA) */
+.orb-subtitle.orb-login-cta {
+  color: #ff8c00;
+  font-weight: 700;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+.orb-subtitle.orb-login-cta:hover {
+  color: #ffab40;
+  text-shadow: 0 0 10px rgba(255, 140, 0, 0.5);
+  text-decoration: underline;
+}
+.orb-timer.orb-login-hint {
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  color: #ff8c00;
+  text-shadow: 0 0 12px rgba(255, 140, 0, 0.6);
+  transition: color 0.15s ease;
+}
+.orb-timer.orb-login-hint:hover {
+  color: #ffab40;
+}
+
 .orb-glass:hover {
   transform: scale(1.02) translateY(-2px);
   box-shadow: 
