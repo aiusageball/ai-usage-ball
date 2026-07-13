@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to check Claude Code usage limits and reset times on macOS</title>
+<meta name="description" content="Check Claude Code usage limits and reset times from the terminal, understand shared Claude usage, and keep the next reset visible on macOS." />
+<link rel="canonical" href="https://aiusageball.com/claude-code-usage-limits.html" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://aiusageball.com/claude-code-usage-limits.html" />
+<meta property="og:title" content="How to check Claude Code usage limits and reset times on macOS" />
+<meta property="og:description" content="A practical guide to checking Claude Code usage status, understanding reset times, and keeping your limits visible." />
+<meta property="og:image" content="https://aiusageball.com/liquid-poster.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="How to check Claude Code usage limits and reset times on macOS" />
+<meta name="twitter:description" content="A practical guide to checking Claude Code usage status, understanding reset times, and keeping your limits visible." />
+<meta name="twitter:image" content="https://aiusageball.com/liquid-poster.png" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "How to check Claude Code usage limits and reset times on macOS",
+  "description": "A practical guide to checking Claude Code usage status, understanding reset times, and keeping your limits visible.",
+  "mainEntityOfPage": "https://aiusageball.com/claude-code-usage-limits.html",
+  "image": "https://aiusageball.com/liquid-poster.png",
+  "author": {"@type": "Organization", "name": "AI Usage Ball"},
+  "publisher": {"@type": "Organization", "name": "AI Usage Ball"}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I check my Claude Code usage limit?",
+      "acceptedAnswer": {"@type": "Answer", "text": "In an active Claude Code session, run /usage to view your plan usage limits and current rate-limit status."}
+    },
+    {
+      "@type": "Question",
+      "name": "When does Claude Code usage reset?",
+      "acceptedAnswer": {"@type": "Answer", "text": "The exact reset time depends on your plan and current usage. Claude shows the reset time when a session limit is reached. Some plans also have weekly limits with a separately assigned reset time."}
+    },
+    {
+      "@type": "Question",
+      "name": "Is Claude Code usage shared with Claude on the web?",
+      "acceptedAnswer": {"@type": "Answer", "text": "For Claude subscriptions, usage across Claude product surfaces can count toward the same usage limit. Check your plan details and current status in Claude for the most accurate information."}
+    }
+  ]
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{--bg:#0a0a0d;--bg2:#101015;--panel:rgba(255,255,255,.035);--line:rgba(255,255,255,.09);--txt:#f4f4f6;--muted:#a2a2ae;--claude:#ff8c00;--cyan:#06b6d4;--max:860px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:#ffd18c;text-decoration-thickness:1px;text-underline-offset:3px}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(10,10,13,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  nav .wrap{height:62px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .logo{display:flex;align-items:center;gap:10px;color:var(--txt);font-size:15px;font-weight:700;text-decoration:none;white-space:nowrap}
+  .dot{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffd9a0,var(--claude) 60%,#7a3d00);box-shadow:0 0 14px rgba(255,140,0,.7)}
+  .nav-links{display:flex;align-items:center;gap:22px;font-size:14px}
+  .nav-links a{color:var(--muted);text-decoration:none}.nav-links a:hover{color:var(--txt)}
+  .button{display:inline-flex;align-items:center;justify-content:center;border-radius:8px;padding:10px 15px;background:var(--claude);color:#211608;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 8px 24px rgba(255,140,0,.2)}
+  .button:hover{transform:translateY(-1px)}
+  main{padding:72px 0 56px}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--claude);margin-bottom:18px}
+  h1{font-size:clamp(36px,6vw,58px);line-height:1.05;letter-spacing:0;font-weight:800;max-width:800px}
+  .dek{font-size:clamp(17px,2.6vw,21px);color:var(--muted);max-width:720px;margin:24px 0 34px}
+  .byline{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+  .hero-image{width:100%;display:block;margin:44px 0 48px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
+  article{font-size:17px;color:#d8d8df}article>*+*{margin-top:20px}article h2{font-size:28px;line-height:1.2;color:var(--txt);margin-top:52px}article h3{font-size:20px;line-height:1.3;color:var(--txt);margin-top:32px}article p{max-width:760px}article ul{padding-left:22px}article li+li{margin-top:9px}
+  .callout{margin:32px 0;padding:22px 24px;border-left:3px solid var(--claude);background:var(--panel);color:#dcdce3}.callout strong{color:var(--txt)}
+  pre{overflow:auto;padding:18px 20px;border:1px solid var(--line);border-radius:8px;background:#0d0d12;color:#e8e8eb;font-family:"JetBrains Mono",monospace;font-size:14px;line-height:1.55}.command{color:#ffd18c}
+  .steps{counter-reset:step;list-style:none;padding:0}.steps li{position:relative;padding:0 0 0 46px}.steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:1px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:rgba(255,140,0,.15);color:var(--claude);font-weight:800;font-size:13px}.steps li+li{margin-top:20px}
+  .sources{font-size:15px;color:var(--muted);border-top:1px solid var(--line);padding-top:24px}.sources li+li{margin-top:8px}
+  .cta{margin-top:54px;padding:34px 30px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(135deg,rgba(255,140,0,.11),rgba(6,182,212,.07));text-align:center}.cta h2{margin:0;font-size:29px}.cta p{margin:12px auto 22px;color:var(--muted);max-width:590px}
+  footer{border-top:1px solid var(--line);padding:32px 0 44px;color:var(--muted);font-size:13px;text-align:center}.footer-links{margin-top:10px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap}
+  @media(max-width:620px){nav .wrap{padding:0 18px}.wrap{padding:0 20px}.nav-links a:not(.button){display:none}main{padding-top:54px}.hero-image{margin:34px 0 40px}article{font-size:16px}article h2{font-size:25px}.cta{padding:28px 20px}}
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a class="logo" href="index.html"><span class="dot"></span>AI Usage Ball</a>
+    <div class="nav-links"><a href="index.html">Home</a><a href="#guide">Guide</a><a class="button" href="index.html#download">Start free</a></div>
+  </div>
+</nav>
+<main id="guide">
+  <div class="wrap">
+    <div class="eyebrow">Claude Code guide</div>
+    <h1>How to check Claude Code usage limits and reset times on macOS</h1>
+    <p class="dek">A quick way to see your current Claude Code limit, understand when it resets, and avoid discovering it only when a coding task stops halfway through.</p>
+    <div class="byline">Updated July 14, 2026 · For Claude Code users on macOS</div>
+    <img class="hero-image" src="liquid-poster.png" alt="AI Usage Ball showing Claude, Codex, and Antigravity usage as liquid gauges" />
+    <article>
+      <p>Claude Code is most useful when it stays in the flow of a task. The awkward moment is reaching a usage limit halfway through debugging, reviewing a large change, or letting an agent work through a test failure. The first step is knowing which limit you are looking at and when it will reset.</p>
+
+      <h2>Check your current Claude Code usage</h2>
+      <p>Inside an active Claude Code session, use the built-in <code>/usage</code> command. Anthropic documents it as the command for viewing your plan usage limits and current rate-limit status.</p>
+      <pre><span class="command">/usage</span></pre>
+      <p>This is the best source of truth for the account that is currently signed in. The status can vary by plan, model, conversation complexity, and the tools you use.</p>
+
+      <h2>What does the reset time mean?</h2>
+      <p>Claude describes usage limits as a budget over a period of time. When you reach a session limit, Claude shows the time that limit will reset. For many individual plans, the included session allowance resets on a five-hour cycle; some plans also include weekly limits with a separately assigned reset time.</p>
+      <div class="callout"><strong>Do not confuse usage limits with context limits.</strong> A usage limit is how much Claude you can use over time. A context limit is how much information one conversation can hold. Starting a new conversation can help with context, but it does not reset a usage limit.</div>
+
+      <h2>Why Claude Code can affect your Claude web usage</h2>
+      <p>For Claude subscriptions, work done across Claude product surfaces can count toward the same usage allowance. That means a long Claude Code task can matter when you later use Claude on the web or desktop app, and the reverse can also be true.</p>
+      <p>The exact limits and resets depend on your plan and can change, so avoid relying on old screenshots or a fixed quota number from someone else's account. Check <code>/usage</code> and the usage area in Claude Settings for the current account-specific answer.</p>
+
+      <h2>A practical workflow for fewer interruptions</h2>
+      <ol class="steps">
+        <li><strong>Check before a long task.</strong> Run <code>/usage</code> before a large migration, deep debugging session, or long agent run.</li>
+        <li><strong>Keep the reset visible.</strong> If you know a reset is close, plan research, reviews, or smaller local work around it instead of starting a task you cannot finish.</li>
+        <li><strong>Watch context separately.</strong> Use Claude Code's <code>/context</code> when a conversation is getting large. Use <code>/compact</code> or a new session when appropriate.</li>
+        <li><strong>Reduce avoidable usage.</strong> High-effort settings, large prompts, and tool-heavy tasks can consume usage faster. Use only the level of effort and tools the task needs.</li>
+      </ol>
+
+      <h2>Keep the next reset on your desktop</h2>
+      <p>If checking <code>/usage</code> in the terminal is enough, you do not need another tool. If you regularly switch between Claude, Codex, and other coding assistants, a persistent visual indicator can make the reset time easier to notice before you commit to a long task.</p>
+      <p><a href="index.html">AI Usage Ball</a> is a local macOS app that reads available usage information from your existing authenticated sessions and shows the remaining Claude usage and reset time as a desktop or menu bar gauge. It also supports Codex / ChatGPT and Antigravity. No usage data is routed through an AI Usage Ball server.</p>
+
+      <h2>Sources and further reading</h2>
+      <ul class="sources">
+        <li><a href="https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work">Anthropic: How do usage and length limits work?</a></li>
+        <li><a href="https://support.claude.com/en/articles/14553413-claude-code-cheatsheet">Anthropic: Claude Code cheatsheet</a></li>
+        <li><a href="https://support.claude.com/en/articles/11049741-what-is-the-max-plan">Anthropic: What is the Max plan?</a></li>
+      </ul>
+    </article>
+    <section class="cta">
+      <h2>See your next reset before it stops your flow.</h2>
+      <p>AI Usage Ball is free to try for 30 days on macOS. It keeps Claude, Codex / ChatGPT, and Antigravity usage in sight while you work.</p>
+      <a class="button" href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" download>Start free on macOS</a>
+    </section>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <div>AI Usage Ball · Your AI limits, always in sight.</div>
+    <div class="footer-links"><a href="index.html">Home</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="changelog.html">Changelog</a></div>
+  </div>
+</footer>
+</body>
+</html>
