@@ -178,6 +178,24 @@
   details[open] summary::after{content:"–"}
   details p{color:var(--muted);font-size:14.5px;padding:0 0 18px}
 
+  /* NEWS */
+  .news-list{max-width:720px;margin:0 auto;display:grid;gap:12px}
+  .news-item{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px 22px;display:block;transition:.15s}
+  .news-item:hover{border-color:rgba(255,255,255,.18);transform:translateY(-1px)}
+  .news-item .meta{display:flex;gap:10px;align-items:center;margin-bottom:7px}
+  .news-item .tag{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:6px}
+  .news-item .tag.claude{background:rgba(255,140,0,.12);color:var(--claude)}
+  .news-item .tag.codex{background:rgba(239,68,68,.12);color:var(--codex)}
+  .news-item .tag.antigravity{background:rgba(6,182,212,.12);color:var(--anti)}
+  .news-item .tag.general{background:rgba(255,255,255,.08);color:var(--muted)}
+  .news-item .date{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted)}
+  .news-item h3{font-size:15.5px;font-weight:600;margin-bottom:4px;color:var(--txt)}
+  .news-item p{color:var(--muted);font-size:13.5px;margin:0}
+  .news-empty{text-align:center;color:var(--muted);font-size:14px}
+  .news-updated{text-align:center;font-size:12px;color:var(--muted);opacity:.6;margin-top:20px}
+
   footer{border-top:1px solid var(--line);padding:42px 0;text-align:center;color:var(--muted);font-size:13.5px}
   footer .logo{justify-content:center;margin-bottom:14px;color:var(--txt)}
   .privacy{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);
@@ -374,6 +392,20 @@
   </div>
 </section>
 
+<section id="news" style="background:var(--bg2)">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="eyebrow">Stay in the loop</div>
+      <h2>AI news</h2>
+      <p>A few things worth knowing about Claude, Codex and Gemini — updated daily.</p>
+    </div>
+    <div class="news-list" id="news-list">
+      <div class="news-empty">Loading…</div>
+    </div>
+    <div class="news-updated" id="news-updated"></div>
+  </div>
+</section>
+
 <!-- DOWNLOAD / FOOTER -->
 <section id="download" style="text-align:center">
   <div class="wrap">
@@ -478,6 +510,39 @@
     return false;
   }
 
+  // ── AI News section (news.json is refreshed daily) ──
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+  function formatNewsDate(iso) {
+    try {
+      const d = new Date(iso + 'T00:00:00Z');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    } catch (e) { return iso; }
+  }
+  fetch('news.json?v=' + Date.now())
+    .then(r => r.json())
+    .then(data => {
+      const items = Array.isArray(data) ? data : (data.items || []);
+      const list = document.getElementById('news-list');
+      if (!items.length) { list.innerHTML = '<div class="news-empty">Check back soon.</div>'; return; }
+      list.innerHTML = items.slice(0, 8).map(n => `
+        <a class="news-item" href="${escapeHtml(n.url || '#')}" target="_blank" rel="noopener">
+          <div class="meta">
+            <span class="tag ${escapeHtml(n.tag || 'general')}">${escapeHtml(n.tag || 'AI')}</span>
+            <span class="date">${formatNewsDate(n.date)}</span>
+          </div>
+          <h3>${escapeHtml(n.title)}</h3>
+          <p>${escapeHtml(n.summary || '')}</p>
+        </a>`).join('');
+      if (data.updated) {
+        document.getElementById('news-updated').textContent = 'Last updated ' + formatNewsDate(data.updated);
+      }
+    })
+    .catch(() => {
+      const list = document.getElementById('news-list');
+      if (list) list.innerHTML = '<div class="news-empty">Check back soon.</div>';
+    });
 </script>
 </body>
 </html>
