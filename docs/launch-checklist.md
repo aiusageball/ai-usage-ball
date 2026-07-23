@@ -16,19 +16,45 @@ launches.
 
 ## GitHub Release
 
-Create an initial release once the signed DMG is ready to attach or link.
+Every release must include the stable website asset name
+`AI-Usage-Ball.dmg`. The public download buttons depend on this exact name.
+After uploading a release, run:
 
-Suggested tag:
-
-```text
-v0.1.0
+```sh
+scripts/verify_public_release.sh
 ```
 
-Suggested title:
+Do not announce a release until that check passes.
+
+Current public tag:
 
 ```text
-AI Usage Ball 0.1.0
+v0.2.1
 ```
+
+Current title:
+
+```text
+AI Usage Ball 0.2.1
+```
+
+## Seven-day recovery sprint
+
+The first target is 10 real DMG downloads and 3 substantive pieces of user
+feedback, not impressions or post count.
+
+- Day 0: verify the website, stable DMG URL, trial launch, and macOS install.
+- Day 1: contact 10 macOS developers who actively use Claude Code or Codex.
+  Ask for a 10-minute test, not a share or upvote.
+- Day 2: publish one problem-led demo with a tagged homepage URL. Show the
+  moment a quota is nearly exhausted and the reset time becomes useful.
+- Day 3-4: fix the first repeated onboarding or trust objection immediately.
+- Day 5: publish the fix and invite the same testers to retry.
+- Day 7: compare Cloudflare visits, GitHub DMG download count, completed app
+  launches, and feedback. Continue only with sources that produced downloads.
+
+Use one tagged homepage URL per source and never reuse a tag across channels.
+GitHub Release asset download counts are the download source of truth.
 
 Suggested release notes:
 
