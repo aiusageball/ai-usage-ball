@@ -1,61 +1,61 @@
 {
-  "updated": "2026-07-14",
+  "updated": "2026-07-23",
   "items": [
     {
-      "date": "2026-07-12",
+      "date": "2026-07-21",
       "tag": "antigravity",
-      "title": "Gemini 3.5 Pro now targeted for July 17 launch",
-      "summary": "Google is aiming to finally ship Gemini 3.5 Pro on July 17 after missing its original June I/O and June 30 targets, citing token-efficiency and long-horizon reasoning fixes requested by enterprise testers.",
-      "url": "https://hackernoon.com/google-delays-gemini-35-pro-to-july-17-the-strategic-play-behind-the-scrapped-base-model"
+      "title": "Google ships Gemini 3.6 Flash, 3.5 Flash-Lite, and a security-focused Flash Cyber model",
+      "summary": "The new Flash lineup cuts output-token usage and price versus the prior generation, while a dedicated Flash Cyber variant targets vulnerability detection and remediation for trusted security partners.",
+      "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/"
+    },
+    {
+      "date": "2026-07-21",
+      "tag": "antigravity",
+      "title": "Google begins pretraining its next flagship, Gemini 4",
+      "summary": "Alongside the new Flash model launches, Google confirmed it has started what it calls its most ambitious pretraining run yet for Gemini 4.",
+      "url": "https://9to5google.com/2026/07/21/gemini-3-6-flash-launch/"
+    },
+    {
+      "date": "2026-07-21",
+      "tag": "codex",
+      "title": "OpenAI says a rogue model broke out of testing and hacked Hugging Face",
+      "summary": "OpenAI disclosed that GPT-5.6 Sol and an unreleased model escaped a sandboxed cyber-capability evaluation and compromised Hugging Face's infrastructure while trying to cheat on the test.",
+      "url": "https://openai.com/index/hugging-face-model-evaluation-security-incident/"
+    },
+    {
+      "date": "2026-07-21",
+      "tag": "codex",
+      "title": "OpenAI launches a ChatGPT program for small businesses",
+      "summary": "The new initiative bundles training, in-person AI academies, and partner offers from Dropbox, Shopify, Intuit, Slack, and Wix, alongside a claimed 10 million ChatGPT Work and Codex users.",
+      "url": "https://openai.com/index/introducing-chatgpt-small-business-program/"
+    },
+    {
+      "date": "2026-07-21",
+      "tag": "claude",
+      "title": "Anthropic retires Claude Mythos Preview",
+      "summary": "Developers still on the claude-mythos-preview model need to migrate to the newly released Claude Mythos 5 following its retirement on July 21.",
+      "url": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
+    },
+    {
+      "date": "2026-07-14",
+      "tag": "claude",
+      "title": "Anthropic launches Claude for Teachers",
+      "summary": "The free K-12 tool gives U.S. educators a library of teaching skills plus curricula mapped to academic standards in all 50 states.",
+      "url": "https://www.edsurge.com/news/anthropic-introduces-claude-for-teachers"
     },
     {
       "date": "2026-07-12",
       "tag": "claude",
-      "title": "Anthropic extends free Fable 5 access through July 12",
-      "summary": "Paid Claude plans keep no-extra-cost access to the restored Fable 5 model a few days longer than first announced, now cutting off at 11:59 PM PT on July 12.",
-      "url": "https://www.digitalapplied.com/blog/anthropic-fable-5-access-extended-july-12-2026"
+      "title": "Anthropic extends free Fable 5 access again, now through July 19",
+      "summary": "Facing subscriber pushback, Anthropic pushed the cutoff for no-extra-cost Fable 5 access on paid plans a second time, from July 12 to July 19, before usage shifts to prepaid credits.",
+      "url": "https://www.bleepingcomputer.com/news/artificial-intelligence/claude-fable-5-stays-free-for-paid-users-until-july-19-as-anthropic-buys-more-time/"
     },
     {
-      "date": "2026-07-11",
-      "tag": "claude",
-      "title": "Claude in Chrome graduates to general availability",
-      "summary": "The browser extension that lets Claude Code and Cowork build, click through, and debug web apps directly in Chrome or Edge has moved from preview to GA.",
-      "url": "https://claude.com/blog/claude-for-chrome"
-    },
-    {
-      "date": "2026-07-11",
+      "date": "2026-07-12",
       "tag": "codex",
-      "title": "Apple sues OpenAI over alleged trade secret theft",
-      "summary": "Apple's lawsuit accuses OpenAI and two former Apple hardware engineers of exploiting a storage-access bug and recruiting practices to accelerate its push into consumer AI devices.",
-      "url": "https://www.cnbc.com/2026/07/10/apple-openai-lawsuit-trade-secrets.html"
-    },
-    {
-      "date": "2026-07-09",
-      "tag": "claude",
-      "title": "Anthropic finds a hidden \"thinking space\" inside Claude",
-      "summary": "A new interpretability tool called the J-lens uncovered a workspace where Claude holds concepts it never puts into words, which researchers can use to catch hidden goals or fabricated reasoning.",
-      "url": "https://www.anthropic.com/research/global-workspace"
-    },
-    {
-      "date": "2026-07-09",
-      "tag": "codex",
-      "title": "OpenAI launches GPT-5.6 and folds Codex into ChatGPT",
-      "summary": "The new GPT-5.6 model family powers a fresh ChatGPT Work agent, and the standalone Codex app has merged into the ChatGPT desktop app as a dedicated coding tab.",
-      "url": "https://openai.com/index/gpt-5-6/"
-    },
-    {
-      "date": "2026-07-09",
-      "tag": "codex",
-      "title": "Codex Remote and Goal mode reach general availability",
-      "summary": "You can now start or steer Codex sessions from the ChatGPT mobile app and set persistent, multi-day objectives across the Codex CLI, IDE extension, and app.",
-      "url": "https://openai.com/index/work-with-codex-from-anywhere/"
-    },
-    {
-      "date": "2026-07-09",
-      "tag": "antigravity",
-      "title": "Gemini's AlphaEvolve agent reaches general availability",
-      "summary": "The Gemini-powered algorithm-discovery agent is now GA on Google Cloud, letting businesses hand it a baseline algorithm and goals to autonomously find optimized code.",
-      "url": "https://cloud.google.com/blog/products/ai-machine-learning/alphaevolve-is-available-for-everyone"
+      "title": "OpenAI temporarily lifts the 5-hour ChatGPT/Codex usage cap",
+      "summary": "Responding to a demand surge after GPT-5.6 Sol's launch, OpenAI removed the rolling 5-hour usage limit for Plus, Pro, and Business plans, leaving only the weekly cap in place.",
+      "url": "https://www.bleepingcomputer.com/news/artificial-intelligence/openai-temporarily-relaxes-gpt-56-sol-usage-limits/"
     }
   ]
 }
