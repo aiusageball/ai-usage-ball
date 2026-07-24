@@ -1,6 +1,34 @@
 {
-  "updated": "2026-07-23",
+  "updated": "2026-07-25",
   "items": [
+    {
+      "date": "2026-07-23",
+      "tag": "claude",
+      "title": "Claude voice mode gets model choice and tool access",
+      "summary": "Anthropic updated Claude's voice mode to let users pick between Opus, Sonnet, and Haiku, reach connected tools like Gmail and Slack, and speak many more languages.",
+      "url": "https://techcrunch.com/2026/07/23/anthropic-updates-claude-voice-mode-with-more-capable-models/"
+    },
+    {
+      "date": "2026-07-23",
+      "tag": "general",
+      "title": "Congress introduces AI Kill Switch Act after OpenAI/Hugging Face breach",
+      "summary": "Reps. Ted Lieu and Nathaniel Moran's bipartisan bill would give DHS authority to force top AI firms to throttle or shut down dangerous models, with fines up to $20M a day for noncompliance.",
+      "url": "https://lieu.house.gov/media-center/press-releases/reps-lieu-and-moran-introduce-bill-require-kill-switch-ai-systems-can"
+    },
+    {
+      "date": "2026-07-23",
+      "tag": "general",
+      "title": "Stripe in talks to acquire OpenRouter for close to $10B",
+      "summary": "The Information reports Stripe is negotiating to buy the AI model marketplace, a huge jump from OpenRouter's $1.3B valuation just two months earlier.",
+      "url": "https://finance.yahoo.com/technology/ai/articles/stripe-talks-acquire-openrouter-potential-215104525.html"
+    },
+    {
+      "date": "2026-07-22",
+      "tag": "claude",
+      "title": "Anthropic launches Economic Index connector for Claude",
+      "summary": "The new connector lets anyone query Anthropic's public dataset on how AI is used across the economy directly inside a Claude chat, free on every plan.",
+      "url": "https://www.anthropic.com/news/anthropic-economic-index-connector"
+    },
     {
       "date": "2026-07-21",
       "tag": "antigravity",
@@ -24,38 +52,10 @@
     },
     {
       "date": "2026-07-21",
-      "tag": "codex",
-      "title": "OpenAI launches a ChatGPT program for small businesses",
-      "summary": "The new initiative bundles training, in-person AI academies, and partner offers from Dropbox, Shopify, Intuit, Slack, and Wix, alongside a claimed 10 million ChatGPT Work and Codex users.",
-      "url": "https://openai.com/index/introducing-chatgpt-small-business-program/"
-    },
-    {
-      "date": "2026-07-21",
       "tag": "claude",
       "title": "Anthropic retires Claude Mythos Preview",
       "summary": "Developers still on the claude-mythos-preview model need to migrate to the newly released Claude Mythos 5 following its retirement on July 21.",
       "url": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
-    },
-    {
-      "date": "2026-07-14",
-      "tag": "claude",
-      "title": "Anthropic launches Claude for Teachers",
-      "summary": "The free K-12 tool gives U.S. educators a library of teaching skills plus curricula mapped to academic standards in all 50 states.",
-      "url": "https://www.edsurge.com/news/anthropic-introduces-claude-for-teachers"
-    },
-    {
-      "date": "2026-07-12",
-      "tag": "claude",
-      "title": "Anthropic extends free Fable 5 access again, now through July 19",
-      "summary": "Facing subscriber pushback, Anthropic pushed the cutoff for no-extra-cost Fable 5 access on paid plans a second time, from July 12 to July 19, before usage shifts to prepaid credits.",
-      "url": "https://www.bleepingcomputer.com/news/artificial-intelligence/claude-fable-5-stays-free-for-paid-users-until-july-19-as-anthropic-buys-more-time/"
-    },
-    {
-      "date": "2026-07-12",
-      "tag": "codex",
-      "title": "OpenAI temporarily lifts the 5-hour ChatGPT/Codex usage cap",
-      "summary": "Responding to a demand surge after GPT-5.6 Sol's launch, OpenAI removed the rolling 5-hour usage limit for Plus, Pro, and Business plans, leaving only the weekly cap in place.",
-      "url": "https://www.bleepingcomputer.com/news/artificial-intelligence/openai-temporarily-relaxes-gpt-56-sol-usage-limits/"
     }
   ]
 }
