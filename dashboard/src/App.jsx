@@ -74,12 +74,29 @@ const launchWidget = async (orbName) => {
     decorations: false,
     transparent: true,
     shadow: false,
-    alwaysOnTop: true,
+    // Keep widgets behind regular app windows, like desktop widgets.
+    alwaysOnTop: false,
+    alwaysOnBottom: true,
     skipTaskbar: true,
     focus: false,   // 关键:widget 弹出不抢焦点,主界面保持激活 → 能连续点每个球一次到位
+    // alwaysOnBottom + focus:false means the widget is essentially always an
+    // "inactive" window in Cocoa's eyes. Without this, macOS swallows the
+    // first click as a plain activate-click and never passes it to the
+    // webview — hover/click on the liquid silently do nothing.
+    acceptFirstMouse: true,
     center: false,
     x,
     y,
+  });
+  ww.once('tauri://created', async () => {
+    // Apply the level again after native window creation. This also avoids a
+    // stale floating level surviving while Tauri finishes creating the window.
+    try {
+      await ww.setAlwaysOnTop(false);
+      await ww.setAlwaysOnBottom(true);
+    } catch (e) {
+      console.error('Failed to lower widget window level:', e);
+    }
   });
   ww.once('tauri://error', async () => {
     // 创建失败 = label 已存在(widget 还开着) → 关掉它(toggle 的"收回")
@@ -424,7 +441,7 @@ const SettingsModal = ({
 
               <div className="setting-section">
                 <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Usage Ball v0.2.1</p>
+                <p className="section-desc">AI Usage Ball v0.2.2</p>
                 <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
               </div>
 
