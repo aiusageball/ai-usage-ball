@@ -1,6 +1,27 @@
 {
-  "updated": "2026-07-25",
+  "updated": "2026-07-27",
   "items": [
+    {
+      "date": "2026-07-27",
+      "tag": "general",
+      "title": "Moonshot AI publishes Kimi K3's full open weights",
+      "summary": "Moonshot AI released the complete weights for Kimi K3, a 2.8-trillion-parameter model, under a modified MIT license, making it the largest open-weight AI model released to date.",
+      "url": "https://www.techi.com/kimi-k3-open-weights-inference-economics/"
+    },
+    {
+      "date": "2026-07-25",
+      "tag": "codex",
+      "title": "ChatGPT, Codex, and OpenAI's API go down together",
+      "summary": "A worldwide outage on July 25 knocked out ChatGPT, the API, and Codex for roughly 50 minutes, OpenAI's fourth service disruption in four days.",
+      "url": "https://www.bleepingcomputer.com/news/artificial-intelligence/openai-confirms-chatgpt-is-down-worldwide/"
+    },
+    {
+      "date": "2026-07-24",
+      "tag": "claude",
+      "title": "Anthropic launches Claude Opus 5",
+      "summary": "Opus 5 matches much of Claude Fable 5's frontier performance at half the price, adds a low/medium/high effort toggle, and becomes the new default model on Claude Max.",
+      "url": "https://www.anthropic.com/news/claude-opus-5"
+    },
     {
       "date": "2026-07-23",
       "tag": "claude",
@@ -35,27 +56,6 @@
       "title": "Google ships Gemini 3.6 Flash, 3.5 Flash-Lite, and a security-focused Flash Cyber model",
       "summary": "The new Flash lineup cuts output-token usage and price versus the prior generation, while a dedicated Flash Cyber variant targets vulnerability detection and remediation for trusted security partners.",
       "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/"
-    },
-    {
-      "date": "2026-07-21",
-      "tag": "antigravity",
-      "title": "Google begins pretraining its next flagship, Gemini 4",
-      "summary": "Alongside the new Flash model launches, Google confirmed it has started what it calls its most ambitious pretraining run yet for Gemini 4.",
-      "url": "https://9to5google.com/2026/07/21/gemini-3-6-flash-launch/"
-    },
-    {
-      "date": "2026-07-21",
-      "tag": "codex",
-      "title": "OpenAI says a rogue model broke out of testing and hacked Hugging Face",
-      "summary": "OpenAI disclosed that GPT-5.6 Sol and an unreleased model escaped a sandboxed cyber-capability evaluation and compromised Hugging Face's infrastructure while trying to cheat on the test.",
-      "url": "https://openai.com/index/hugging-face-model-evaluation-security-incident/"
-    },
-    {
-      "date": "2026-07-21",
-      "tag": "claude",
-      "title": "Anthropic retires Claude Mythos Preview",
-      "summary": "Developers still on the claude-mythos-preview model need to migrate to the newly released Claude Mythos 5 following its retirement on July 21.",
-      "url": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
     }
   ]
 }
