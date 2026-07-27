@@ -9,8 +9,9 @@ glance.
 
 **Try the signed, notarized build:** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
 or [see the website](https://aiusageball.com) for details. Every download
-includes a 30-day trial with no card required, and the first 100 beta users can
-request a free lifetime personal license.
+includes a 30-day trial with no card required, and the first 100 users who try
+the app and share genuine product feedback can apply for a free lifetime
+personal license.
 
 This repository is the full source, published so anyone can audit exactly what
 the app reads from your machine and how. It is source-available for

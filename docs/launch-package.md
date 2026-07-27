@@ -41,8 +41,8 @@ reads existing local sessions and talks directly to the providers' own usage
 endpoints; there is no account or proxy server run by me. The source is
 available so the local readers can be audited.
 
-The signed build has a 30-day trial, and the first 100 beta users can claim a
-free lifetime license. I would especially value feedback on: which provider
+The signed build has a 30-day trial, and the first 100 users who try it and
+share genuine product feedback can apply for a free lifetime license. I would especially value feedback on: which provider
 limits are actually useful to see, whether the privacy model is clear enough,
 and where the readings are wrong or stale.
 ```
@@ -85,8 +85,8 @@ remaining allowance and reset time visible in the menu bar / on the desktop.
 
 It supports Claude, Codex / ChatGPT, and Antigravity. It reads existing local
 sessions, talks directly to the providers, and the source is available to
-audit. The signed build has a 30-day trial, and the first 100 beta users can
-claim a free lifetime license.
+audit. The signed build has a 30-day trial, and the first 100 users who try it
+and share genuine product feedback can apply for a free lifetime license.
 
 I am most interested in feedback from people who switch between these tools:
 which limits or alerts would actually change how you plan a coding session?
@@ -114,8 +114,8 @@ reset times visible in the menu bar or as small desktop gauges.
 
 It supports Claude, Codex / ChatGPT, and Antigravity. The usage readers run
 locally on the Mac and the source is available to inspect. The app is signed
-and notarized, has a 30-day trial with no card, and the first 100 beta users
-can claim a free lifetime license.
+and notarized, has a 30-day trial with no card, and the first 100 users who try
+it and share genuine product feedback can apply for a free lifetime license.
 
 I would love feedback on the UI and whether the local-data explanation feels
 clear enough. I am the developer.
@@ -131,7 +131,7 @@ Record a 20-30 second screen capture with no narration:
 2. Show a Claude gauge with a reset countdown, then open the app to show the
    provider names and the fuller state.
 3. Return to the editor with the gauges unobtrusively visible.
-4. End on `First 100 beta users get a free lifetime license` for two seconds.
+4. End on `Try it, share genuine feedback, and apply — 100 free lifetime licenses` for two seconds.
 
 Do not use synthetic quota values that look like a product mockup. A real
 anonymized account state is more credible.

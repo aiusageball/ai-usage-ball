@@ -95,8 +95,8 @@ AI Usage Ball keeps Claude, Codex / ChatGPT, and Antigravity usage visible as
 live liquid gauges with reset countdowns. The usage readers run locally on your
 Mac; the source is available so people can audit what it reads and from where.
 
-The signed build has a 30-day trial, and the first 100 beta users can claim a
-free lifetime license. The repo is available for auditability and
+The signed build has a 30-day trial, and the first 100 users who try it and
+share genuine product feedback can apply for a free lifetime license. The repo is available for auditability and
 noncommercial self-builds.
 ```
 
