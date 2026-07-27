@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.2.3] — 2026-07-28
+
+### Fixed
+- Popped-out desktop widgets: the liquid still didn't react to hovering, only to clicking. macOS's WebKit deliberately withholds hover events from windows sitting behind other apps, so widgets now watch the cursor natively and start the flow after it rests over the orb for a couple of seconds.
+
 ## [0.2.2] — 2026-07-27
 
 ### Fixed

@@ -163,6 +163,21 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   // On pop-out (mount), flow the liquid for 30 seconds, then settle.
   useEffect(() => { startFlowBurst(30000); }, []);
 
+  // WKWebView withholds native mouseenter/mousemove/mouseleave from inactive
+  // windows (widgets are alwaysOnBottom + focus:false, so they're always
+  // "inactive" — this is deliberate WebKit policy, not a missing config; see
+  // lib.rs's spawn_widget_hover_poller). The Rust side polls the OS-global
+  // cursor position instead and emits these once the cursor has sat over the
+  // widget for 2s, so hovering still visibly starts the liquid flowing.
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const unlistenPromises = [
+      win.listen('hover-dwell-start', () => handleEnter()),
+      win.listen('hover-dwell-end', () => handleLeave()),
+    ];
+    return () => { unlistenPromises.forEach(p => p.then(fn => fn())); };
+  }, []);
+
   // ── Ambient random pulse: occasionally the orb flows by itself ──
   const ambientTimerRef = useRef(null);
   useEffect(() => {

@@ -2,7 +2,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Holds the spawned Python backend so it can be killed when the app exits.
 struct BackendProcess(Mutex<Option<Child>>);
@@ -161,6 +161,82 @@ fn spawn_backend(app: &tauri::App) -> Option<Child> {
     }
 }
 
+/// Poll the OS-global cursor position and, for any popped-out widget window
+/// the cursor sits over continuously for DWELL_MS, emit "hover-dwell-start"/
+/// "hover-dwell-end" to that window so the frontend can drive the liquid the
+/// same way it would from a native `mouseenter`/`mouseleave`.
+///
+/// WHY: widgets are `alwaysOnBottom` + `focus: false`, so they're permanently
+/// an "inactive" window to Cocoa. WKWebView deliberately withholds DOM
+/// mouseenter/mousemove/mouseleave from inactive windows (see WebKit bug
+/// 187545 — filed to STOP background windows from receiving hover, i.e. this
+/// is intentional WebKit policy, not a missing config flag). `CGEvent`'s
+/// global cursor location is a plain OS query, not a delivered window event,
+/// so it isn't gated by window activation at all — this sidesteps the
+/// suppression entirely instead of fighting it.
+#[cfg(target_os = "macos")]
+fn spawn_widget_hover_poller(app: tauri::AppHandle) {
+    use core_graphics::event::CGEvent;
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    const DWELL: Duration = Duration::from_millis(2000);
+    const POLL_INTERVAL: Duration = Duration::from_millis(120);
+
+    std::thread::spawn(move || {
+        // label -> (entered_at, dwell_fired)
+        let mut state: HashMap<String, (Instant, bool)> = HashMap::new();
+        loop {
+            std::thread::sleep(POLL_INTERVAL);
+
+            let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) else { continue };
+            let Ok(event) = CGEvent::new(source) else { continue };
+            let cursor = event.location(); // top-left origin, matches window position space
+
+            let widgets: Vec<(String, tauri::WebviewWindow)> = app
+                .webview_windows()
+                .into_iter()
+                .filter(|(label, _)| label.starts_with("widget-"))
+                .collect();
+
+            let active_labels: std::collections::HashSet<String> =
+                widgets.iter().map(|(l, _)| l.clone()).collect();
+            state.retain(|label, _| active_labels.contains(label));
+
+            for (label, window) in widgets {
+                let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else { continue };
+                let inside = cursor.x >= pos.x as f64
+                    && cursor.x <= (pos.x + size.width as i32) as f64
+                    && cursor.y >= pos.y as f64
+                    && cursor.y <= (pos.y + size.height as i32) as f64;
+
+                let entry = state.entry(label.clone());
+                match (inside, entry) {
+                    (true, std::collections::hash_map::Entry::Vacant(v)) => {
+                        v.insert((Instant::now(), false));
+                    }
+                    (true, std::collections::hash_map::Entry::Occupied(mut o)) => {
+                        let (entered_at, fired) = *o.get();
+                        if !fired && entered_at.elapsed() >= DWELL {
+                            let _ = window.emit("hover-dwell-start", ());
+                            o.insert((entered_at, true));
+                        }
+                    }
+                    (false, std::collections::hash_map::Entry::Occupied(o)) => {
+                        let (_, fired) = *o.get();
+                        if fired {
+                            let _ = window.emit("hover-dwell-end", ());
+                        }
+                        o.remove();
+                    }
+                    (false, std::collections::hash_map::Entry::Vacant(_)) => {}
+                }
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -177,6 +253,8 @@ pub fn run() {
             }
             let backend = spawn_backend(app);
             app.manage(BackendProcess(Mutex::new(backend)));
+            #[cfg(target_os = "macos")]
+            spawn_widget_hover_poller(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![open_provider_app, secure_get, secure_set])
