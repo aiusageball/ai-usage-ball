@@ -8,9 +8,9 @@ glance.
 ![AI Usage Ball — three liquid orbs showing Claude, Codex, and Antigravity usage remaining](docs/screenshot.png)
 
 **Try the signed, notarized build:** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
-or [see the website](https://aiusageball.com) for details. The trial lasts 30
-days with no card required; after that it is a one-time A$9.99 purchase with no
-subscription.
+or [see the website](https://aiusageball.com) for details. Every download
+includes a 30-day trial with no card required, and the first 100 beta users can
+request a free lifetime personal license.
 
 This repository is the full source, published so anyone can audit exactly what
 the app reads from your machine and how. It is source-available for

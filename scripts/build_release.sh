@@ -10,9 +10,11 @@
 # strictly and rejects a dereferenced duplicate file there even if it has an
 # otherwise byte-valid embedded signature ("The signature of the binary is
 # invalid"). So: build WITHOUT Apple env vars (skips Tauri's own auto-notarize),
-# fix the symlink in the built .app, re-sign, notarize manually, staple, then
-# hand-build the DMG from the fixed .app (Tauri's own DMG would package the
-# still-broken pre-fix .app).
+# fix the symlink in the built .app when the selected Python distribution uses
+# a framework, re-sign, notarize manually, staple, then hand-build the DMG from
+# the fixed .app (Tauri's own DMG would package the still-broken pre-fix .app).
+# Standalone Python distributions can instead bundle libpython*.dylib and do not
+# contain Python.framework; those builds skip the framework-only repair.
 #
 # Also: Tauri's `resources` mapping does NOT auto-sign nested executables/
 # dylibs the way `externalBin` sidecars do, so every Mach-O file under the
@@ -89,10 +91,14 @@ echo "==> 4/6 tauri build WITHOUT Apple env vars (signs, skips auto-notarize)"
 
 APP="$SRC_TAURI/target/release/bundle/macos/AI Usage Ball.app"
 
-echo "==> 5/6 Fixing the Python.framework symlink Tauri dereferenced, then re-signing + notarizing"
+echo "==> 5/6 Repairing Python.framework when present, then re-signing + notarizing"
 PYFW="$APP/Contents/Resources/backend/_internal/Python.framework/Python"
-rm -f "$PYFW"
-ln -s "Versions/Current/Python" "$PYFW"
+if [[ -e "$PYFW" || -L "$PYFW" ]]; then
+  rm -f "$PYFW"
+  ln -s "Versions/Current/Python" "$PYFW"
+else
+  echo "Python.framework not present; bundled backend uses a standalone Python library."
+fi
 codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP/Contents/MacOS/app"
 codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"

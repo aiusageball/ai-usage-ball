@@ -29,13 +29,13 @@ Do not announce a release until that check passes.
 Current public tag:
 
 ```text
-v0.2.1
+v0.2.2
 ```
 
 Current title:
 
 ```text
-AI Usage Ball 0.2.1
+AI Usage Ball 0.2.2
 ```
 
 ## Seven-day recovery sprint
@@ -43,7 +43,8 @@ AI Usage Ball 0.2.1
 The first target is 10 real DMG downloads and 3 substantive pieces of user
 feedback, not impressions or post count.
 
-- Day 0: verify the website, stable DMG URL, trial launch, and macOS install.
+- Day 0: verify the website, stable DMG URL, founding-user claim flow, trial
+  launch, and macOS install.
 - Day 1: contact 10 macOS developers who actively use Claude Code or Codex.
   Ask for a 10-minute test, not a share or upvote.
 - Day 2: publish one problem-led demo with a tagged homepage URL. Show the
@@ -94,8 +95,9 @@ AI Usage Ball keeps Claude, Codex / ChatGPT, and Antigravity usage visible as
 live liquid gauges with reset countdowns. The usage readers run locally on your
 Mac; the source is available so people can audit what it reads and from where.
 
-It is a paid signed build with a 30-day trial, and the repo is available for
-auditability and noncommercial self-builds.
+The signed build has a 30-day trial, and the first 100 beta users can claim a
+free lifetime license. The repo is available for auditability and
+noncommercial self-builds.
 ```
 
 ## Product Hunt

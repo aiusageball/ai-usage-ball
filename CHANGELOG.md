@@ -2,7 +2,7 @@
 
 All notable changes to AI Usage Ball are documented here.
 
-## [0.2.2] — 2026-07-25
+## [0.2.2] — 2026-07-27
 
 ### Fixed
 - Popped-out desktop widgets: hovering or clicking the liquid could silently do nothing, since widgets sit behind other app windows and macOS doesn't pass mouse input through to an inactive window by default. Widgets now accept that first click/hover directly.
