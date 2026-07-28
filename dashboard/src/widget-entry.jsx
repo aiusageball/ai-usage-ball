@@ -399,6 +399,27 @@ function WidgetApp() {
 
   const orbData = config.getData(data);
 
+  // ── Update-ready badge ──
+  // Most people barely reopen the main window once a widget is pinned to
+  // their desktop, so a Settings-only "restart to update" notice can go
+  // unseen for a long-running session. The main window broadcasts
+  // 'update-ready' (see App.jsx) once a downloaded update is waiting for a
+  // restart; every open widget picks it up independently.
+  const [updateReady, setUpdateReady] = useState(false);
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const p = win.listen('update-ready', () => setUpdateReady(true));
+    return () => { p.then(fn => fn()); };
+  }, []);
+
+  const restartForUpdate = async (e) => {
+    e.stopPropagation();
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+    } catch (err) {}
+  };
+
   // ── Right-click context menu state ──
   const [menu, setMenu] = useState(null);
   useEffect(() => {
@@ -478,6 +499,15 @@ function WidgetApp() {
         offline={orbType === 'antigravity' && data.antigravity && data.antigravity.available === false}
       />
 
+      {updateReady && (
+        <button
+          className="widget-update-badge"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={restartForUpdate}
+          title="Update ready — click to restart"
+        />
+      )}
+
       {menu && (
         <div
           className="widget-context-menu"
@@ -485,6 +515,7 @@ function WidgetApp() {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button onClick={reopenMain}>⤢ Open dashboard</button>
+          {updateReady && <button onClick={restartForUpdate}>↻ Restart to update</button>}
           <button className="danger" onClick={closeWidget}>✕ Close widget</button>
         </div>
       )}

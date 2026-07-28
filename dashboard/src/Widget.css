@@ -23,6 +23,34 @@ html, body, #widget-root {
   height: 100vh;
   background: transparent;
   cursor: grab;
+  position: relative;
+}
+
+/* Small "update ready" badge, top-right corner of the widget window. Blue
+   (not orange/red/cyan) so it never reads as a usage-critical warning. */
+.widget-update-badge {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #0a84ff;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18), 0 0 10px rgba(10, 132, 255, 0.7);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  padding: 0;
+  cursor: pointer;
+  animation: widget-update-pulse 2.4s ease-in-out infinite;
+  z-index: 5;
+}
+.widget-update-badge:hover {
+  animation-play-state: paused;
+  box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.28), 0 0 14px rgba(10, 132, 255, 0.9);
+}
+
+@keyframes widget-update-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
 }
 
 .widget-container:active {

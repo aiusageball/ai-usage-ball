@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { eggBeginDrag, eggConsumeClickSuppress } from './easterEgg';
 import './App.css';
@@ -1051,6 +1052,11 @@ function App() {
         }
       });
       setUpdateState('ready');
+      // Widgets are the thing people actually look at day to day — most users
+      // rarely reopen the main window, so a Settings-only "restart to update"
+      // notice would go unseen for a long-running session. Broadcast to any
+      // open widget windows so they can show a small badge instead.
+      emit('update-ready', { version: pendingUpdateRef.current && pendingUpdateRef.current.version }).catch(() => {});
     } catch (e) {
       console.error('Update install failed:', e);
       setUpdateState('error');
@@ -1092,9 +1098,14 @@ function App() {
 
   // Silent check shortly after launch — only acts (downloads) if autoUpdate is on;
   // otherwise it just surfaces "available" so the Settings panel can show it.
+  // This app is meant to stay running for days at a time, not get relaunched
+  // often, so a launch-only check could miss releases for a long time —
+  // also re-check every 3 days for as long as the app stays open.
   useEffect(() => {
     const t = setTimeout(() => { checkForUpdates(false); }, 4000);
-    return () => clearTimeout(t);
+    const RECHECK_MS = 3 * 24 * 60 * 60 * 1000;
+    const id = setInterval(() => { checkForUpdates(false); }, RECHECK_MS);
+    return () => { clearTimeout(t); clearInterval(id); };
   }, []);
 
   // ── Free trial / license (state lives in the macOS Keychain, see lib.rs) ──
