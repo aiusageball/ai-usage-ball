@@ -5,7 +5,7 @@ All notable changes to AI Usage Ball are documented here.
 ## [0.3.0] — 2026-07-28
 
 ### Added
-- **Team View**: see 2-3 teammates' remaining usage alongside your own during a pairing session. Opt-in and local-network only — turn on sharing in Settings → General, then pin teammates who show up automatically (or add one by local IP if your WiFi isolates devices). Nothing ever leaves your Mac except a name and three percentages, and only when you've explicitly turned it on.
+- **Team View**: see 2-3 teammates' remaining usage alongside your own during a pairing session. Opt-in and local-network only — turn on sharing in Settings → General (or right from the "Share" button under your orbs), then pin teammates who show up automatically, or add one by local IP if your WiFi isolates devices. Nothing ever leaves your Mac except a name and three percentages, and only when you've explicitly turned it on. Built for [uri_yap on Product Hunt](https://www.producthunt.com/products/ai-usage-ball), who asked for exactly this.
 
 ## [0.2.3] — 2026-07-28
 
