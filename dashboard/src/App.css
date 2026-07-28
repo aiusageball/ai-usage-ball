@@ -671,30 +671,41 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   color: var(--text-primary);
 }
 
-.team-add-btn {
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
+.team-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-add-btn,
+.team-share-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.04em;
-  padding: 5px 12px;
+  padding: 6px 14px;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
-.team-add-btn:hover {
-  color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.25);
+.team-add-btn:hover,
+.team-share-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
-.team-add-btn-ghost {
-  opacity: 0.4;
-  border-style: solid;
-  border-color: transparent;
+.team-share-btn.active {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.1);
 }
-.team-add-btn-ghost:hover {
-  opacity: 0.9;
+.team-share-btn.active:hover {
+  background: rgba(74, 222, 128, 0.18);
+  border-color: rgba(74, 222, 128, 0.6);
 }
 
 .team-add-picker {

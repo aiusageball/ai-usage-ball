@@ -1411,14 +1411,23 @@ function App() {
             );
           })}
 
-          {pinnedPeers.length < 3 && (
+          <div className="team-panel-actions">
             <button
-              className={`team-add-btn${pinnedPeers.length === 0 ? ' team-add-btn-ghost' : ''}`}
-              onClick={() => { setShowTeamAdd(v => !v); setTeamManualError(''); }}
+              className={`team-share-btn${teamSharingEnabled ? ' active' : ''}`}
+              onClick={() => setTeamSharingEnabled(!teamSharingEnabled)}
+              title="Broadcast my usage to teammates on this network"
             >
-              {showTeamAdd ? 'Cancel' : (pinnedPeers.length === 0 ? '+ Team' : '+ Add teammate')}
+              {teamSharingEnabled ? '● Sharing' : 'Share'}
             </button>
-          )}
+            {pinnedPeers.length < 3 && (
+              <button
+                className="team-add-btn"
+                onClick={() => { setShowTeamAdd(v => !v); setTeamManualError(''); }}
+              >
+                {showTeamAdd ? 'Cancel' : (pinnedPeers.length === 0 ? '+ Team' : '+ Add teammate')}
+              </button>
+            )}
+          </div>
 
           {showTeamAdd && (
             <div className="team-add-picker">
