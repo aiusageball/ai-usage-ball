@@ -571,6 +571,188 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   text-decoration: underline;
 }
 
+.widget-hint {
+  text-align: center;
+  margin: 4px 0 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+/* ==========================================
+   Team View: 2-3 pinned teammates, LAN-only
+   ========================================== */
+.team-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 10px auto 0;
+  max-width: 360px;
+}
+
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: opacity 0.2s ease;
+}
+
+.team-row-offline {
+  opacity: 0.45;
+  filter: saturate(0.5);
+}
+
+.team-row-name {
+  flex: 1;
+  min-width: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-row-chips {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.team-chip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  min-width: 30px;
+  text-align: center;
+}
+
+.team-chip-claude { color: #ff8c00; }
+.team-chip-codex { color: #ef4444; }
+.team-chip-antigravity { color: var(--color-antigravity); }
+
+.team-chip.critical {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ff6b6b;
+  animation: team-chip-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes team-chip-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.team-row-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+.team-row-remove:hover {
+  color: var(--text-primary);
+}
+
+.team-add-btn {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.team-add-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.team-add-btn-ghost {
+  opacity: 0.4;
+  border-style: solid;
+  border-color: transparent;
+}
+.team-add-btn-ghost:hover {
+  opacity: 0.9;
+}
+
+.team-add-picker {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.team-add-discovered-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.team-add-discovered-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.team-add-discovered-hint {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.team-add-manual {
+  display: flex;
+  gap: 6px;
+}
+.team-add-manual .ando-input {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.team-add-manual .ando-btn {
+  padding: 6px 12px;
+  font-size: 10px;
+}
+
+.team-add-error {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #ff6b6b;
+  margin: 0;
+}
+
 /* ==========================================
    Settings Modal & Button
    ========================================== */

@@ -140,6 +140,8 @@ const SettingsModal = ({
   showInDock, setShowInDock,
   theme, setTheme,
   autoUpdate, setAutoUpdate,
+  teamSharingEnabled, setTeamSharingEnabled,
+  teamDisplayName, setTeamDisplayName,
   updateState, updateInfo, updateProgress, onCheckForUpdates, onRestartNow,
   licensed, daysLeft, onActivate, checkoutUrl
 }) => {
@@ -406,6 +408,32 @@ const SettingsModal = ({
                     <option value="30">Every 30 seconds</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="setting-section">
+                <h3 className="section-title">Team View</h3>
+                <div className="checkbox-group">
+                  <label className="checkbox-option">
+                    <input type="checkbox" checked={teamSharingEnabled} onChange={(e) => setTeamSharingEnabled(e.target.checked)} />
+                    <span>Share my usage with teammates on this network</span>
+                  </label>
+                </div>
+                <p className="section-desc" style={{ marginTop: '4px' }}>
+                  Opt-in and local-network only — this exposes your remaining % (nothing else) to other devices on the same WiFi, never to a server.
+                </p>
+                {teamSharingEnabled && (
+                  <div className="setting-group" style={{ marginTop: '10px' }}>
+                    <label>Your name (shown to teammates)</label>
+                    <input
+                      className="ando-input"
+                      type="text"
+                      maxLength={40}
+                      value={teamDisplayName}
+                      placeholder="e.g. Ben"
+                      onChange={(e) => setTeamDisplayName(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="setting-section">
@@ -876,6 +904,98 @@ function App() {
   const [showInDock, setShowInDock] = useLocalStorage('aipulse_showInDock', false);
   const [theme, setTheme] = useLocalStorage('aipulse_theme', 'dark');
   const [autoUpdate, setAutoUpdate] = useLocalStorage('aipulse_autoUpdate', true);
+  const [hasPoppedOutWidget, setHasPoppedOutWidget] = useLocalStorage('aipulse_hasPoppedOutWidget', false);
+
+  // ── Team View (LAN-only, opt-in) ──
+  const [teamSharingEnabled, setTeamSharingEnabled] = useLocalStorage('aipulse_teamSharingEnabled', false);
+  const [teamDisplayName, setTeamDisplayName] = useLocalStorage('aipulse_teamDisplayName', '');
+  const [teamInstanceId, setTeamInstanceId] = useLocalStorage('aipulse_teamInstanceId', '');
+  // [{instance_id, display_name, host, port}] — the user's pinned "2-3 teammates".
+  const [pinnedPeers, setPinnedPeers] = useLocalStorage('aipulse_pinnedPeers', []);
+  // Live data from the local backend's /api/team-peers (discovered + pinned + manual).
+  const [teamPeersLive, setTeamPeersLive] = useState([]);
+  const [showTeamAdd, setShowTeamAdd] = useState(false);
+  const [teamManualHost, setTeamManualHost] = useState('');
+  const [teamManualError, setTeamManualError] = useState('');
+
+  // Generate a stable instance ID once — this is how a pinned teammate stays
+  // pinned across their app restarts and IP changes (their IP isn't stable,
+  // this ID is).
+  useEffect(() => {
+    if (!teamInstanceId) {
+      setTeamInstanceId(Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join(''));
+    }
+  }, [teamInstanceId]);
+
+  // Push sharing on/off + display name to the local backend whenever they change.
+  useEffect(() => {
+    if (!teamInstanceId) return; // wait for the ID to exist first
+    fetch('http://127.0.0.1:8000/api/team-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: teamSharingEnabled,
+        display_name: teamDisplayName || 'Teammate',
+        instance_id: teamInstanceId,
+      }),
+    }).catch(() => {});
+  }, [teamSharingEnabled, teamDisplayName, teamInstanceId]);
+
+  // Keep the backend's poller aware of who's pinned, so it keeps retrying a
+  // teammate even after they fall out of mDNS range (different network, etc.).
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/api/team-pins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: pinnedPeers }),
+    }).catch(() => {});
+  }, [pinnedPeers]);
+
+  // Poll for discovered/pinned/manual peers. Runs regardless of whether
+  // sharing is on — you can watch teammates without broadcasting yourself.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      fetch('http://127.0.0.1:8000/api/team-peers')
+        .then(r => r.json())
+        .then(d => { if (!cancelled) setTeamPeersLive(d.peers || []); })
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 6000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const pinTeamPeer = (peer) => {
+    if (pinnedPeers.length >= 3) return;
+    if (pinnedPeers.some(p => p.instance_id === peer.instance_id)) return;
+    setPinnedPeers([...pinnedPeers, {
+      instance_id: peer.instance_id, display_name: peer.display_name, host: peer.host, port: peer.port,
+    }]);
+    setShowTeamAdd(false);
+  };
+
+  const unpinTeamPeer = (instanceId) => {
+    setPinnedPeers(pinnedPeers.filter(p => p.instance_id !== instanceId));
+  };
+
+  const addTeamPeerManual = () => {
+    const host = teamManualHost.trim();
+    if (!host) return;
+    setTeamManualError('');
+    fetch('http://127.0.0.1:8000/api/team-peers/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, port: 8000 }),
+    })
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) { setTeamManualError(d.detail || 'Could not connect'); return; }
+        pinTeamPeer(d);
+        setTeamManualHost('');
+      })
+      .catch(() => setTeamManualError('Could not connect'));
+  };
 
   // ── Auto-update (Tauri updater plugin) ──
   // idle | checking | uptodate | available | downloading | ready | error
@@ -1155,6 +1275,8 @@ function App() {
           showInDock={showInDock} setShowInDock={setShowInDock}
           theme={theme} setTheme={setTheme}
           autoUpdate={autoUpdate} setAutoUpdate={setAutoUpdate}
+          teamSharingEnabled={teamSharingEnabled} setTeamSharingEnabled={setTeamSharingEnabled}
+          teamDisplayName={teamDisplayName} setTeamDisplayName={setTeamDisplayName}
           updateState={updateState} updateInfo={updateInfo} updateProgress={updateProgress}
           onCheckForUpdates={checkForUpdates} onRestartNow={restartNow}
           licensed={isLicensed} daysLeft={daysLeft}
@@ -1215,7 +1337,7 @@ function App() {
             ambientPulse={ambientOrb === 'claude'}
             needsLogin={!!data.claude.needsLogin && !data.claude.loaded}
             onNeedsLogin={() => openUrl('https://claude.ai')}
-            onPopOut={() => launchWidget('claude')}
+            onPopOut={() => { launchWidget('claude'); setHasPoppedOutWidget(true); }}
           />
 
           {/* Orb 2: Codex (Red) */}
@@ -1232,7 +1354,7 @@ function App() {
             introOrder={1}
             resetCredits={data.codex.reset_credits}
             ambientPulse={ambientOrb === 'codex'}
-            onPopOut={() => launchWidget('codex')}
+            onPopOut={() => { launchWidget('codex'); setHasPoppedOutWidget(true); }}
           />
 
           {/* Orb 3: Antigravity (Cyan-Blue + Orange) */}
@@ -1254,10 +1376,74 @@ function App() {
             introOrder={2}
             offline={data.antigravity.available === false}
             ambientPulse={ambientOrb === 'antigravity'}
-            onPopOut={() => launchWidget('antigravity')}
+            onPopOut={() => { launchWidget('antigravity'); setHasPoppedOutWidget(true); }}
           />
 
         </main>
+
+        {!hasPoppedOutWidget && (
+          <p className="widget-hint">click to put on your desktop</p>
+        )}
+
+        {/* Team View: 2-3 pinned teammates' usage, LAN-only, opt-in. */}
+        <div className="team-panel">
+          {pinnedPeers.map(pinned => {
+            const live = teamPeersLive.find(p => p.instance_id === pinned.instance_id);
+            const providers = live && live.providers;
+            const chip = (key) => (
+              <span
+                key={key}
+                className={`team-chip team-chip-${key}${providers && providers[key] && providers[key].critical ? ' critical' : ''}`}
+              >
+                {providers && providers[key] != null ? `${Math.round(providers[key].remaining_pct)}%` : '···'}
+              </span>
+            );
+            return (
+              <div key={pinned.instance_id} className={`team-row${live && live.online ? '' : ' team-row-offline'}`}>
+                <span className="team-row-name">{pinned.display_name || 'Teammate'}</span>
+                <div className="team-row-chips">
+                  {chip('claude')}
+                  {chip('codex')}
+                  {chip('antigravity')}
+                </div>
+                <button className="team-row-remove" onClick={() => unpinTeamPeer(pinned.instance_id)} title="Remove">×</button>
+              </div>
+            );
+          })}
+
+          {pinnedPeers.length < 3 && (
+            <button
+              className={`team-add-btn${pinnedPeers.length === 0 ? ' team-add-btn-ghost' : ''}`}
+              onClick={() => { setShowTeamAdd(v => !v); setTeamManualError(''); }}
+            >
+              {showTeamAdd ? 'Cancel' : (pinnedPeers.length === 0 ? '+ Team' : '+ Add teammate')}
+            </button>
+          )}
+
+          {showTeamAdd && (
+            <div className="team-add-picker">
+              {teamPeersLive
+                .filter(p => !pinnedPeers.some(pp => pp.instance_id === p.instance_id))
+                .map(p => (
+                  <button key={p.instance_id} className="team-add-discovered-item" onClick={() => pinTeamPeer(p)}>
+                    {p.display_name} <span className="team-add-discovered-hint">found on this network</span>
+                  </button>
+                ))}
+              <div className="team-add-manual">
+                <input
+                  className="ando-input"
+                  type="text"
+                  placeholder="or teammate's local IP"
+                  value={teamManualHost}
+                  onChange={(e) => setTeamManualHost(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addTeamPeerManual(); }}
+                />
+                <button className="ando-btn" onClick={addTeamPeerManual}>Add</button>
+              </div>
+              {teamManualError && <p className="team-add-error">{teamManualError}</p>}
+            </div>
+          )}
+        </div>
 
         {/* Tactile Ando Concrete Bottom Border Accent */}
         <div className="popover-footer-accent">

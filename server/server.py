@@ -11,10 +11,16 @@ import urllib.error
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 import socket
-from zeroconf import ServiceInfo, Zeroconf
-from fastapi import FastAPI, Request
+from zeroconf import ServiceInfo, Zeroconf, ServiceBrowser, ServiceListener
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, Response
+from pydantic import BaseModel
+
+# Overridable only for local dev/testing (e.g. running two instances on one
+# machine to simulate two teammates for Team View — see docs/team-view-test.md).
+# Never overridden in the shipped app.
+SERVER_PORT = int(os.environ.get("AIPULSE_PORT", "8000"))
 
 
 @asynccontextmanager
@@ -36,7 +42,7 @@ async def lifespan(app: FastAPI):
             "_aipulse._tcp.local.",
             "AIPulse Server._aipulse._tcp.local.",
             addresses=[socket.inet_aton(ip)],
-            port=8000,
+            port=SERVER_PORT,
             properties={'desc': 'AI Pulse Local Server'},
             server="aipulseserver.local.",
         )
@@ -52,10 +58,24 @@ async def lifespan(app: FastAPI):
     try:
         zeroconf_instance, info = await asyncio.wait_for(
             asyncio.to_thread(_register_zeroconf), timeout=5.0)
-        print(f"ZeroConf broadcasting AIPulse Server on {ip}:8000")
+        print(f"ZeroConf broadcasting AIPulse Server on {ip}:{SERVER_PORT}")
     except Exception as e:
         print(f"ZeroConf skipped ({e}); Apple Watch discovery disabled")
         zeroconf_instance, info = None, None
+
+    # Team View reuses this same Zeroconf() instance for its own, separate
+    # opt-in service type — one shared instance, one shutdown path. If the
+    # Watch registration above failed/timed out, Team View still gets its own
+    # instance so it isn't silently disabled by an unrelated failure.
+    global _team_zc
+    if zeroconf_instance is not None:
+        _team_zc = zeroconf_instance
+    else:
+        try:
+            _team_zc = await asyncio.wait_for(asyncio.to_thread(Zeroconf), timeout=5.0)
+        except Exception as e:
+            print(f"Team View Zeroconf init skipped ({e}); LAN discovery disabled")
+            _team_zc = None
 
     # Real-data pollers: Claude usage via Anthropic OAuth (direct, no CodexBar);
     # Codex/Antigravity still via CodexBar CLI for now.
@@ -64,6 +84,7 @@ async def lifespan(app: FastAPI):
     codex_task = asyncio.create_task(poll_codex_oauth())
     antigravity_task = asyncio.create_task(poll_antigravity_local())
     tick_task = asyncio.create_task(background_ticker())
+    team_task = asyncio.create_task(browse_team_peers())
     try:
         yield
     finally:
@@ -71,10 +92,14 @@ async def lifespan(app: FastAPI):
         codex_task.cancel()
         antigravity_task.cancel()
         tick_task.cancel()
+        team_task.cancel()
+        _team_unregister_sync()
         if zeroconf_instance:
             if info:
                 zeroconf_instance.unregister_service(info)
             zeroconf_instance.close()
+        elif _team_zc:
+            _team_zc.close()
 
 
 app = FastAPI(title="AI Usage Dashboard Server", lifespan=lifespan)
@@ -615,6 +640,266 @@ async def poll_antigravity_local():
         fail_count = 0 if ok else fail_count + 1
         await asyncio.sleep(20.0 if (ok or fail_count > ANTIGRAVITY_FAST_RETRY_MAX) else 3.0)
 
+# ── Team View: LAN-only peer discovery (opt-in, no cloud) ──
+# Lets 2-3 teammates on the same local network see each other's remaining %
+# during a pairing session. Fully separate from the Watch's zeroconf service
+# (_aipulse._tcp.local.) — its own service type, so multiple teammates
+# broadcasting at once don't collide with each other or with Watch discovery.
+TEAM_SERVICE_TYPE = "_aipulseteam._tcp.local."
+TEAM_CRITICAL_PCT = 10.0  # matches the orb UI's isCritical threshold (App.jsx)
+
+team_settings = {"enabled": False, "display_name": "", "instance_id": ""}
+# mDNS instance name -> {"host", "port", "last_seen"}
+_team_discovered = {}
+# instance_id -> {"host", "port", "display_name"} — pinned by the frontend;
+# may currently be offline/out of mDNS range, kept so we keep retrying it.
+_team_pinned = {}
+# instance_id -> {"instance_id", "display_name", "host", "port", "online", "providers", "updated_at"}
+_team_peers_cache = {}
+
+_team_zc = None            # shared Zeroconf() instance (see lifespan())
+_team_service_info = None  # our own currently-registered ServiceInfo, or None
+
+
+def _team_status_payload():
+    """Project `state` into the narrow, deliberately minimal payload
+    teammates see: a display name + per-provider remaining % + a critical
+    flag. No reset timestamps, no session internals, no plan/org info — this
+    is the only data that ever leaves the machine (LAN-only, opt-in)."""
+    def _remaining(pct):
+        return round(max(0.0, min(100.0, 100.0 - safe_pct(pct))), 1)
+
+    claude_remaining = _remaining(state["claude"]["rate_limit_pct"])
+    codex_remaining = _remaining(state["codex"]["rate_limit_pct"])
+    # Antigravity's primary orb ring is Gemini, stored in the secondary field — see App.jsx.
+    antigravity_remaining = _remaining(state["antigravity"]["rate_limit_pct_secondary"])
+
+    return {
+        "display_name": team_settings["display_name"] or "Teammate",
+        "instance_id": team_settings["instance_id"],
+        "providers": {
+            "claude": {"remaining_pct": claude_remaining, "critical": claude_remaining < TEAM_CRITICAL_PCT},
+            "codex": {"remaining_pct": codex_remaining, "critical": codex_remaining < TEAM_CRITICAL_PCT},
+            "antigravity": {"remaining_pct": antigravity_remaining, "critical": antigravity_remaining < TEAM_CRITICAL_PCT},
+        },
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('10.255.255.255', 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
+def _team_register_sync():
+    """Register (replacing any prior registration) our team-broadcast
+    ServiceInfo. Runs in a worker thread — zeroconf's interface probing can
+    hang, same caution as the Watch registration in lifespan()."""
+    global _team_service_info
+    if _team_zc is None:
+        return
+    if _team_service_info is not None:
+        try:
+            _team_zc.unregister_service(_team_service_info)
+        except Exception:
+            pass
+        _team_service_info = None
+    display = team_settings["display_name"] or "Teammate"
+    name = f"{display}-{team_settings['instance_id']}.{TEAM_SERVICE_TYPE}"
+    info = ServiceInfo(
+        TEAM_SERVICE_TYPE,
+        name,
+        addresses=[socket.inet_aton(_local_ip())],
+        port=SERVER_PORT,
+        properties={'name': display},
+    )
+    _team_zc.register_service(info)
+    _team_service_info = info
+
+
+def _team_unregister_sync():
+    global _team_service_info
+    if _team_zc is not None and _team_service_info is not None:
+        try:
+            _team_zc.unregister_service(_team_service_info)
+        except Exception:
+            pass
+    _team_service_info = None
+
+
+async def apply_team_sharing():
+    """Bring the live zeroconf registration in line with
+    team_settings['enabled']. Safe to call repeatedly — every time the
+    setting is toggled from Settings, not just at startup."""
+    try:
+        if team_settings["enabled"] and team_settings["instance_id"]:
+            await asyncio.wait_for(asyncio.to_thread(_team_register_sync), timeout=5.0)
+        else:
+            await asyncio.wait_for(asyncio.to_thread(_team_unregister_sync), timeout=5.0)
+    except Exception as e:
+        print(f"Team sharing zeroconf update skipped ({e})")
+
+
+class _TeamServiceListener(ServiceListener):
+    """Tracks other AI Usage Ball instances broadcasting on the LAN.
+    Callbacks run on zeroconf's own thread; the dict they mutate is only
+    ever read/written under the GIL, which is enough for this best-effort
+    discovery cache (no correctness-critical ordering needed)."""
+
+    def add_service(self, zc, type_, name):
+        info = zc.get_service_info(type_, name, timeout=2000)
+        if info and info.addresses:
+            host = socket.inet_ntoa(info.addresses[0])
+            _team_discovered[name] = {"host": host, "port": info.port, "last_seen": time.time()}
+
+    def update_service(self, zc, type_, name):
+        self.add_service(zc, type_, name)
+
+    def remove_service(self, zc, type_, name):
+        _team_discovered.pop(name, None)
+
+
+def _fetch_team_status_sync(host: str, port: int):
+    req = urllib.request.Request(f"http://{host}:{port}/api/team-status")
+    with urllib.request.urlopen(req, timeout=3) as resp:
+        return json.loads(resp.read().decode())
+
+
+async def browse_team_peers():
+    """Discover other AI Usage Ball instances on the LAN (mDNS) and poll each
+    discovered/pinned/manually-added peer's /api/team-status every few
+    seconds. Never blocks startup — _team_zc was already set up (or left
+    None) by lifespan()'s own hard-timeout-guarded init before this task
+    even starts."""
+    if _team_zc is not None:
+        try:
+            def _start_browser():
+                return ServiceBrowser(_team_zc, TEAM_SERVICE_TYPE, _TeamServiceListener())
+            await asyncio.wait_for(asyncio.to_thread(_start_browser), timeout=5.0)
+            print("Team peer discovery started")
+        except Exception as e:
+            print(f"Team peer discovery skipped ({e})")
+
+    while True:
+        await asyncio.sleep(5.0)
+
+        targets = {}
+        for name, d in list(_team_discovered.items()):
+            targets[name] = (d["host"], d["port"])
+        for iid, p in list(_team_pinned.items()):
+            key = f"pinned:{iid}"
+            if key not in targets:
+                targets[key] = (p["host"], p["port"])
+
+        for host, port in set(targets.values()):
+            try:
+                payload = await asyncio.wait_for(
+                    asyncio.to_thread(_fetch_team_status_sync, host, port), timeout=3.0
+                )
+                iid = payload.get("instance_id")
+                if not iid or iid == team_settings.get("instance_id"):
+                    continue  # never show yourself in your own team list
+                _team_peers_cache[iid] = {
+                    "instance_id": iid,
+                    "display_name": payload.get("display_name", "Teammate"),
+                    "host": host,
+                    "port": port,
+                    "online": True,
+                    "providers": payload.get("providers", {}),
+                    "updated_at": payload.get("updated_at", ""),
+                }
+            except Exception:
+                # Keep last-known values, just flip online off — graceful
+                # degradation, not an error. Only touches peers we've already
+                # successfully fetched from before.
+                for cached in _team_peers_cache.values():
+                    if cached["host"] == host and cached["port"] == port:
+                        cached["online"] = False
+                        break
+
+
+class TeamSettingsBody(BaseModel):
+    enabled: bool
+    display_name: str = ""
+    instance_id: str = ""
+
+
+class TeamPinsBody(BaseModel):
+    pinned: list  # [{instance_id, display_name, host, port}]
+
+
+class TeamManualPeerBody(BaseModel):
+    host: str
+    port: int = SERVER_PORT
+
+
+@app.post("/api/team-settings")
+async def set_team_settings(body: TeamSettingsBody):
+    team_settings["enabled"] = body.enabled
+    team_settings["display_name"] = body.display_name.strip()[:40]
+    if body.instance_id:
+        team_settings["instance_id"] = body.instance_id
+    await apply_team_sharing()
+    return {"ok": True, "instance_id": team_settings["instance_id"]}
+
+
+@app.get("/api/team-status")
+def get_team_status():
+    if not team_settings["enabled"]:
+        raise HTTPException(status_code=403, detail="sharing disabled")
+    return _team_status_payload()
+
+
+@app.get("/api/team-peers")
+def get_team_peers():
+    return {"peers": list(_team_peers_cache.values())}
+
+
+@app.post("/api/team-peers/manual")
+async def add_team_peer_manual(body: TeamManualPeerBody):
+    try:
+        payload = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_team_status_sync, body.host, body.port), timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="timed out reaching that address")
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise HTTPException(status_code=403, detail="that teammate hasn't turned on sharing")
+        raise HTTPException(status_code=502, detail=f"HTTP {e.code} from that address")
+    except urllib.error.URLError as e:
+        raise HTTPException(status_code=502, detail=f"couldn't connect: {e.reason}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    iid = payload.get("instance_id") or f"{body.host}:{body.port}"
+    _team_peers_cache[iid] = {
+        "instance_id": iid,
+        "display_name": payload.get("display_name", "Teammate"),
+        "host": body.host,
+        "port": body.port,
+        "online": True,
+        "providers": payload.get("providers", {}),
+        "updated_at": payload.get("updated_at", ""),
+    }
+    return _team_peers_cache[iid]
+
+
+@app.post("/api/team-pins")
+def set_team_pins(body: TeamPinsBody):
+    global _team_pinned
+    _team_pinned = {
+        p["instance_id"]: {"host": p.get("host", ""), "port": p.get("port", SERVER_PORT)}
+        for p in body.pinned if p.get("instance_id") and p.get("host")
+    }
+    return {"ok": True, "count": len(_team_pinned)}
+
 _VIDEO_CANDIDATES = [
     os.path.join(os.path.dirname(__file__), "liquid-loop.mp4"),  # sibling copy (e.g. App Support)
     os.path.join(os.path.dirname(__file__), "..", "dashboard", "public", "liquid-loop.mp4"),
@@ -710,4 +995,4 @@ if __name__ == "__main__":
     import uvicorn
     # timeout_graceful_shutdown: 被关闭时最多等 5 秒就强制退出,避免长连接(SSE)
     # 把进程卡在"半关闭"状态变成僵尸(监听口已关、却还吊着旧连接推冻结数据)。
-    uvicorn.run(app, host="0.0.0.0", port=8000, timeout_graceful_shutdown=5)
+    uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT, timeout_graceful_shutdown=5)
