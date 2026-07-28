@@ -219,14 +219,17 @@ fn spawn_widget_hover_poller(app: tauri::AppHandle) {
                     (true, std::collections::hash_map::Entry::Occupied(mut o)) => {
                         let (entered_at, fired) = *o.get();
                         if !fired && entered_at.elapsed() >= DWELL {
-                            let _ = window.emit("hover-dwell-start", ());
+                            // emit() broadcasts to every window by default — must scope
+                            // to this widget's own label, or hovering one widget wrongly
+                            // starts the liquid flowing on all of them.
+                            let _ = window.emit_to(label.as_str(), "hover-dwell-start", ());
                             o.insert((entered_at, true));
                         }
                     }
                     (false, std::collections::hash_map::Entry::Occupied(o)) => {
                         let (_, fired) = *o.get();
                         if fired {
-                            let _ = window.emit("hover-dwell-end", ());
+                            let _ = window.emit_to(label.as_str(), "hover-dwell-end", ());
                         }
                         o.remove();
                     }
