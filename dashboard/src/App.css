@@ -720,6 +720,13 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.team-add-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin: 0 0 2px;
+}
+
 .team-add-discovered-item {
   display: flex;
   align-items: baseline;

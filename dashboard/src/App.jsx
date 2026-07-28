@@ -917,6 +917,8 @@ function App() {
   const [showTeamAdd, setShowTeamAdd] = useState(false);
   const [teamManualHost, setTeamManualHost] = useState('');
   const [teamManualError, setTeamManualError] = useState('');
+  const [showTeamNamePrompt, setShowTeamNamePrompt] = useState(false);
+  const [teamNameDraft, setTeamNameDraft] = useState('');
 
   // Generate a stable instance ID once — this is how a pinned teammate stays
   // pinned across their app restarts and IP changes (their IP isn't stable,
@@ -995,6 +997,31 @@ function App() {
         setTeamManualHost('');
       })
       .catch(() => setTeamManualError('Could not connect'));
+  };
+
+  // Clicking "Share" for the first time (no name set yet) shouldn't silently
+  // start broadcasting as generic "Teammate" — ask for a name first. Turning
+  // sharing back off never needs a prompt.
+  const handleShareClick = () => {
+    if (teamSharingEnabled) {
+      setTeamSharingEnabled(false);
+      return;
+    }
+    if (!teamDisplayName.trim()) {
+      setTeamNameDraft(teamDisplayName);
+      setShowTeamAdd(false);
+      setShowTeamNamePrompt(true);
+      return;
+    }
+    setTeamSharingEnabled(true);
+  };
+
+  const confirmTeamName = () => {
+    const name = teamNameDraft.trim();
+    if (!name) return;
+    setTeamDisplayName(name);
+    setTeamSharingEnabled(true);
+    setShowTeamNamePrompt(false);
   };
 
   // ── Auto-update (Tauri updater plugin) ──
@@ -1414,7 +1441,7 @@ function App() {
           <div className="team-panel-actions">
             <button
               className={`team-share-btn${teamSharingEnabled ? ' active' : ''}`}
-              onClick={() => setTeamSharingEnabled(!teamSharingEnabled)}
+              onClick={handleShareClick}
               title="Broadcast my usage to teammates on this network"
             >
               {teamSharingEnabled ? '● Sharing' : 'Share'}
@@ -1422,12 +1449,31 @@ function App() {
             {pinnedPeers.length < 3 && (
               <button
                 className="team-add-btn"
-                onClick={() => { setShowTeamAdd(v => !v); setTeamManualError(''); }}
+                onClick={() => { setShowTeamAdd(v => !v); setShowTeamNamePrompt(false); setTeamManualError(''); }}
               >
                 {showTeamAdd ? 'Cancel' : (pinnedPeers.length === 0 ? '+ Team' : '+ Add teammate')}
               </button>
             )}
           </div>
+
+          {showTeamNamePrompt && (
+            <div className="team-add-picker">
+              <p className="team-add-label">What should teammates see?</p>
+              <div className="team-add-manual">
+                <input
+                  className="ando-input"
+                  type="text"
+                  maxLength={40}
+                  placeholder="Your name, e.g. Ben"
+                  value={teamNameDraft}
+                  onChange={(e) => setTeamNameDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') confirmTeamName(); }}
+                  autoFocus
+                />
+                <button className="ando-btn" onClick={confirmTeamName}>Start sharing</button>
+              </div>
+            </div>
+          )}
 
           {showTeamAdd && (
             <div className="team-add-picker">
