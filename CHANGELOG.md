@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.1] — 2026-08-11
+
+### Fixed
+- Desktop widgets could overlap each other by a sliver (window height was taller than the spacing between them), so the middle one could silently steal clicks meant for its neighbors. Widgets are now spaced far enough apart that this can't happen.
+
 ## [0.3.0] — 2026-07-28
 
 ### Added
