@@ -61,7 +61,12 @@ const launchWidget = async (orbName) => {
   const widgetW = 240;
   const rightInset = 166;   // gap from window's right edge to the screen edge
   const topMargin = 30;     // y of the first (Claude) widget
-  const vSpacing = 232;     // vertical gap between stacked widgets
+  // Must be >= the widget window's own height (300, below) — otherwise
+  // adjacent widgets' rectangular hit-test areas overlap, and whichever one
+  // is topmost silently steals clicks meant for its neighbor (e.g. Codex,
+  // sandwiched in the middle, could swallow clicks aimed at Claude/
+  // Antigravity in the overlap band).
+  const vSpacing = 310;
   const screenW = window.screen.availWidth || window.screen.width || 3440;
   const idx = Math.max(0, ['claude', 'codex', 'antigravity'].indexOf(orbName));
   const x = Math.max(0, screenW - widgetW - rightInset);
