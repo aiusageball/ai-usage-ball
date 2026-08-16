@@ -59,16 +59,19 @@ const launchWidget = async (orbName) => {
   // (Claude on top, Codex, then Antigravity) — matches the user's preferred
   // layout, sitting just left of the macOS desktop widgets in the corner.
   const widgetW = 240;
-  const widgetH = 225;      // actual content (orb + labels) is ~215-220px tall —
-                             // was 300, way more than needed, which is what
-                             // forced vSpacing so wide in the first place.
+  // Measured from a live widget's actual getBoundingClientRect() (not a CSS
+  // estimate this time): content tops out at 212px (Claude/Antigravity, two
+  // label lines) / 198px (Codex, one line). 270 leaves ~29px clear on each
+  // side — comfortably past the update badge's corner too (10-23px) — versus
+  // the earlier 225 guess, which left only 13px and clipped the orb.
+  const widgetH = 270;
   const rightInset = 166;   // gap from window's right edge to the screen edge
   const topMargin = 30;     // y of the first (Claude) widget
   // Must be > widgetH — otherwise adjacent widgets' rectangular hit-test areas
   // overlap, and whichever one is topmost silently steals clicks meant for
   // its neighbor (e.g. Codex, sandwiched in the middle, could swallow clicks
   // aimed at Claude/Antigravity in the overlap band).
-  const vSpacing = 232;
+  const vSpacing = 280;
   const screenW = window.screen.availWidth || window.screen.width || 3440;
   const idx = Math.max(0, ['claude', 'codex', 'antigravity'].indexOf(orbName));
   const x = Math.max(0, screenW - widgetW - rightInset);
