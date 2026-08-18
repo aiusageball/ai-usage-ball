@@ -480,7 +480,7 @@ const SettingsModal = ({
 
               <div className="setting-section">
                 <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Usage Ball v0.3.1</p>
+                <p className="section-desc">AI Usage Ball v0.3.2</p>
                 <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
               </div>
 

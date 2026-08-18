@@ -122,9 +122,8 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
 
   const rotationRef = useRef(Math.floor(Math.random() * 360));
 
-  // Manual seek-driven liquid animation (WKWebView compatible)
-  const rAFRef = useRef(null);
-  const lastTimeRef = useRef(null);
+  // Liquid animation state (native playback — see the effect further down)
+  const lastReloadRef = useRef(0);
   const baseSpeedRef = useRef(0.8 + Math.random() * 0.4);
   const hoveringRef = useRef(false);
   const lingerTimerRef = useRef(null);
@@ -199,38 +198,60 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
     if (burstTimerRef.current) clearTimeout(burstTimerRef.current);
   }, []);
 
+  // ── Liquid animation: NATIVE playback, not per-frame seeking ──
+  // This used to advance `currentTime` by hand on every requestAnimationFrame
+  // tick, on the belief that WKWebView blocks video.play() without a user
+  // gesture. That belief was wrong — measured on a real widget, a muted
+  // play() resolves and advances the video normally. The old approach was
+  // also why the liquid kept mysteriously freezing: it pinned the animation
+  // to the JS event loop (~100 seeks/sec/widget), and WebKit freely throttles
+  // or suspends rAF for windows that are permanently inactive and
+  // alwaysOnBottom — exactly what a desktop widget is. When that happened the
+  // countdown (a setInterval) kept ticking while the liquid sat frozen.
+  //
+  // Native playback runs in the media pipeline instead, so no amount of JS
+  // throttling can stall it — and it costs a fraction of the CPU. The asset is
+  // already a baked 478-frame boomerang, so plain forward `loop` playback
+  // gives the same visual with no reverse seeking (see the black-frame note in
+  // App.jsx: reverse seeks flash the whole orb black in WKWebView).
+  const applyPlayback = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    const spd = currentSpeedRef.current;
+    if (spd > 0.05) {
+      // WebKit ignores/garbles extreme rates; the natural range here is 0.8-1.2.
+      try { v.playbackRate = Math.max(0.25, Math.min(2, spd)); } catch (e) {}
+      if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+    } else if (!v.paused) {
+      try { v.pause(); } catch (e) {}
+    }
+  };
+
   useEffect(() => {
     const v = videoRef.current;
     if (v) {
-      try {
-        v.currentTime = Math.random() * (v.duration || 10);
-        currentSpeedRef.current = isCriticalRef.current ? baseSpeedRef.current : 0;
-      } catch (e) {}
+      try { v.currentTime = Math.random() * (v.duration || 10); } catch (e) {}
     }
+    currentSpeedRef.current = isCriticalRef.current ? baseSpeedRef.current : 0;
 
-    const loop = (timestamp) => {
+    // Only eases the speed toward its target — the video keeps playing on its
+    // own between ticks, so even if this timer gets throttled the liquid still
+    // flows (it just ramps in more coarsely). 80ms ≈ 12 ticks/sec vs the old
+    // ~100 seeks/sec.
+    const id = setInterval(() => {
+      currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.08;
+      applyPlayback();
+
+      // Watchdog: if the element lost its data (backend restart, media stack
+      // eviction after a long session) reload it, otherwise the orb would sit
+      // frozen forever with no way back.
       const vid = videoRef.current;
-      if (vid && !isNaN(vid.duration) && vid.duration > 0) {   // 见 App.jsx:WKWebView readyState 脆弱点
-        const dt = lastTimeRef.current ? (timestamp - lastTimeRef.current) / 1000 : 0;
-        lastTimeRef.current = timestamp;
-        currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.05;
-        const spd = currentSpeedRef.current;
-        if (spd > 0.01) {
-          // Boomerang 反弹:正放到末帧倒放,倒放到首帧再正放(240 帧单向素材,端点不重复)。
-          // 视频本身已是 478 帧 boomerang,只正向播放循环;永不反向 seek(否则整球闪黑)。
-          const advance = dt * spd;
-          let newTime = vid.currentTime + advance;
-          const dur = vid.duration;
-          if (newTime >= dur) newTime -= dur;
-          try { vid.currentTime = newTime; } catch (e) {}
-        }
-      } else {
-        lastTimeRef.current = timestamp;
+      if (vid && (vid.error || vid.readyState === 0) && Date.now() - lastReloadRef.current > 15000) {
+        lastReloadRef.current = Date.now();
+        try { vid.load(); } catch (e) {}
       }
-      rAFRef.current = requestAnimationFrame(loop);
-    };
-    rAFRef.current = requestAnimationFrame(loop);
-    return () => { if (rAFRef.current) cancelAnimationFrame(rAFRef.current); };
+    }, 80);
+    return () => clearInterval(id);
   }, []);
 
   const isExhausted = validPct <= 0;
@@ -263,11 +284,18 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
                   if (v && v.duration) v.currentTime = Math.random() * (v.duration - 0.1);
                 } catch (e) {}
               }}
-              onLoadedData={() => { loadedOnceRef.current = true; }}
+              onLoadedData={() => { loadedOnceRef.current = true; videoRetryRef.current = 0; }}
               onError={() => {
-                // ~2min window — bundled PyInstaller backend unpacks slowly on
-                // first launch, so the video endpoint can take a while. (See App.jsx.)
-                if (loadedOnceRef.current || videoRetryRef.current >= 40) return;
+                // Two different situations share this handler:
+                //  - Cold start: the bundled PyInstaller backend unpacks slowly,
+                //    so the video endpoint can 404 for a while (~2min of retries).
+                //  - Mid-session: the backend restarted (or the media stack
+                //    dropped the element) after it had already loaded once.
+                // The old code bailed out entirely once loadedOnce was set, so
+                // the second case left the orb permanently frozen with no way to
+                // recover short of closing and re-opening the widget. Retry in
+                // both cases; the counter resets on every successful load.
+                if (videoRetryRef.current >= 40) return;
                 videoRetryRef.current += 1;
                 setTimeout(() => {
                   try { videoRef.current && videoRef.current.load(); } catch (e) {}

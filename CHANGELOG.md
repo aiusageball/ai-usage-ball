@@ -2,6 +2,12 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.2] — 2026-08-17
+
+### Fixed
+- The liquid in desktop widgets would stop animating after a while — sometimes on one orb, sometimes all of them — and clicking or hovering wouldn't bring it back. The animation was being driven frame-by-frame from JavaScript, which macOS is free to throttle or suspend for windows that sit behind everything else, so the countdown kept ticking while the liquid sat frozen. It now plays natively, which nothing can stall, and uses a fraction of the CPU.
+- A widget whose liquid video dropped out (for example after the app's background service restarted) would stay frozen permanently. It now recovers on its own.
+
 ## [0.3.1] — 2026-08-11
 
 ### Fixed

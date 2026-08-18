@@ -57,6 +57,20 @@
 
   <div class="version">
     <div class="version-header">
+      <span class="version-num">v0.3.2</span>
+      <span class="version-date">August 17, 2026</span>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag fixed">Fixed</span></div>
+      <ul>
+        <li>The liquid in desktop widgets would stop animating after a while and clicking or hovering wouldn't bring it back. The animation was driven frame-by-frame from JavaScript, which macOS throttles for windows sitting behind everything else — so the countdown kept ticking while the liquid sat frozen. It now plays natively, which nothing can stall, and uses a fraction of the CPU.</li>
+        <li>A widget whose liquid video dropped out now recovers on its own instead of staying frozen for good.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="version">
+    <div class="version-header">
       <span class="version-num">v0.3.1</span>
       <span class="version-date">August 11, 2026</span>
     </div>
