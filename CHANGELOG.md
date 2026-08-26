@@ -2,6 +2,15 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.3] — 2026-08-26
+
+### Added
+- Codex now shows both five-hour and weekly remaining usage as dual liquid rings, matching the Claude orb.
+- Codex now shows separate five-hour and weekly reset countdowns, plus the number of reset credits left below the orb.
+
+### Fixed
+- Codex usage polling now reads the weekly `secondary_window` from the ChatGPT usage endpoint and clears it correctly after its weekly reset.
+
 ## [0.3.2] — 2026-08-17
 
 ### Fixed

@@ -504,6 +504,16 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   letter-spacing: 0.05em;
 }
 
+.orb-usage-lines {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.orb-reset-credits {
+  color: rgba(255, 255, 255, 0.62);
+}
+
 .orb-title-row {
   display: flex;
   align-items: center;

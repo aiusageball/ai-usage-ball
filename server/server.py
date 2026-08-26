@@ -156,9 +156,13 @@ state = {
         "provider": "Codex",
         "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
         "rate_limit_pct": 0.0,
+        "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
+        "status_secondary": "NORMAL",
         "reset_time": "",
+        "reset_time_secondary": "",
         "resetsAt": "",
+        "resetsAt_secondary": "",
         "reset_credits": None,
         "logs": []
     }
@@ -220,6 +224,10 @@ def clamp_expired_windows():
         co["rate_limit_pct"] = 0.0
         co["status"] = "NORMAL"
         co["resetsAt"] = ""
+    if _iso_in_past(co.get("resetsAt_secondary", "")):
+        co["rate_limit_pct_secondary"] = 0.0
+        co["status_secondary"] = "NORMAL"
+        co["resetsAt_secondary"] = ""
 
 # ── Claude: real usage via claude.ai cookie (primary) / OAuth token (read-only fallback) ──
 CLAUDE_CREDS_FILE = os.path.expanduser("~/.claude/.credentials.json")
@@ -460,23 +468,32 @@ async def poll_codex_oauth():
                 usage = await asyncio.to_thread(fetch_codex_usage, token, acct)
                 rl = usage.get("rate_limit") or {}
                 pri = rl.get("primary_window") or {}
+                sec = rl.get("secondary_window") or {}
                 pri_used = safe_pct(pri.get("used_percent", 0))
+                sec_used = safe_pct(sec.get("used_percent", 0))
                 reset_at = pri.get("reset_at")
+                reset_at_secondary = sec.get("reset_at")
                 # "限额重置券"剩余张数(撞限额时可立刻重置额度)
                 reset_credits = (usage.get("rate_limit_reset_credits") or {}).get("available_count")
 
                 state["codex"]["loaded"] = True
                 state["codex"]["rate_limit_pct"] = pri_used
+                state["codex"]["rate_limit_pct_secondary"] = sec_used
                 state["codex"]["reset_credits"] = reset_credits
                 state["codex"]["resetsAt"] = (
                     datetime.fromtimestamp(reset_at, tz=timezone.utc).isoformat()
                     if reset_at else ""
                 )
+                state["codex"]["resetsAt_secondary"] = (
+                    datetime.fromtimestamp(reset_at_secondary, tz=timezone.utc).isoformat()
+                    if reset_at_secondary else ""
+                )
                 state["codex"]["status"] = "EXHAUSTED" if pri_used >= 100 else "NORMAL"
+                state["codex"]["status_secondary"] = "EXHAUSTED" if sec_used >= 100 else "NORMAL"
 
                 timestamp = time.strftime("%H:%M:%S")
                 plan = usage.get("plan_type", "")
-                msg = f"ChatGPT/Codex: {pri_used:.0f}% used (plan: {plan})"
+                msg = f"ChatGPT/Codex: 5h {pri_used:.0f}% used, weekly {sec_used:.0f}% used (plan: {plan})"
                 if not state["codex"]["logs"] or state["codex"]["logs"][0]["msg"] != msg:
                     state["codex"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})
                     state["codex"]["logs"] = state["codex"]["logs"][:30]

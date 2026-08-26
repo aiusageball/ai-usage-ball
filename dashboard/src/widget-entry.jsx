@@ -51,16 +51,20 @@ const ORB_CONFIG = {
   },
   codex: {
     color: '#ef4444',
+    secondaryColor: '#fb7185',
     glowColor: 'rgba(239, 68, 68, 0.4)',
     videoFilter: 'hue-rotate(320deg) saturate(2) brightness(1.2)',
     label: 'CODEX',
     primaryLabel: 'CODEX REMAINING',
-    stackLabels: false,
+    secondaryLabel: 'WEEKLY REMAINING',
+    stackLabels: true,
     getData: (d) => ({
       percentage: 100 - d.codex.rate_limit_pct,
+      secondaryPercentage: 100 - d.codex.rate_limit_pct_secondary,
     }),
     getTimers: (d) => ({
       timer: formatCountdownHMS(d.codex.resetsAt),
+      secondaryTimer: formatCountdownHMS(d.codex.resetsAt_secondary),
     }),
   },
   antigravity: {
@@ -353,9 +357,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         <div className="orb-timer-wrapper">
           <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
           {secondaryTimer ? (
-            <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>{secondaryTimer}</span>
-          ) : resetCredits != null ? (
-            <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>↺ {resetCredits} LEFT</span>
+            <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
           ) : null}
         </div>
 
@@ -370,12 +372,16 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         {offline ? (
           <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
         ) : hasSecondary ? (
-          <div style={{ display: 'flex', flexDirection: stackLabels ? 'column' : 'row', justifyContent: 'center', alignItems: 'center', gap: stackLabels ? '4px' : '8px' }}>
+          <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle">{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
             <p className="orb-subtitle">{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </div>
         ) : (
-          <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
+          <>
+            <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
+          </>
         )}
       </div>
     </div>
@@ -392,7 +398,7 @@ function WidgetApp() {
   const [data, setData] = useState({
     antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
     claude: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
-    codex: { loaded: false, rate_limit_pct: 0, resetsAt: '' },
+    codex: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
   });
   const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00' });
 

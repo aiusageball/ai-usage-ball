@@ -820,9 +820,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
           <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
           )}
           {needsLogin ? null : secondaryTimer ? (
-            <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>{secondaryTimer}</span>
-          ) : resetCredits != null ? (
-            <span className="orb-timer-secondary" style={{ color: '#fb923c', textShadow: '0 0 8px #fb923c' }}>↺ {resetCredits} LEFT</span>
+            <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
           ) : null}
         </div>
 
@@ -858,12 +856,16 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
         ) : offline ? (
           <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
         ) : hasSecondary ? (
-          <div style={{ display: 'flex', flexDirection: stackLabels ? 'column' : 'row', justifyContent: 'center', alignItems: 'center', gap: stackLabels ? '4px' : '8px' }}>
+          <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle">{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
             <p className="orb-subtitle">{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </div>
         ) : (
-          <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
+          <>
+            <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
+          </>
         )}
       </div>
     </div>
@@ -901,9 +903,13 @@ function App() {
       provider: "Codex",
       loaded: false,
       rate_limit_pct: 0.0,
+      rate_limit_pct_secondary: 0.0,
       status: "NORMAL",
+      status_secondary: "NORMAL",
       reset_time: "",
+      reset_time_secondary: "",
       resetsAt: "",
+      resetsAt_secondary: "",
       reset_credits: null
     }
   });
@@ -1185,6 +1191,7 @@ function App() {
     claude: "00:00:00",
     claude_secondary: "00:00:00",
     codex: "00:00:00",
+    codex_secondary: "00:00:00",
     antigravity: "00:00:00",
     antigravity_claude: "00:00:00"
   });
@@ -1278,6 +1285,7 @@ function App() {
         claude: formatCountdownHMS(d.claude.resetsAt),
         claude_secondary: formatCountdownHMS(d.claude.resetsAt_secondary),
         codex: formatCountdownHMS(d.codex.resetsAt),
+        codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary),
         antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary),
         antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt)
       });
@@ -1390,13 +1398,18 @@ function App() {
 
           {/* Orb 2: Codex (Red) */}
           <DualRingOrb 
-            color="#ef4444" 
+            color="#ef4444"
+            secondaryColor="#fb7185"
             glowColor="rgba(239, 68, 68, 0.4)" 
             videoFilter="hue-rotate(320deg) saturate(2) brightness(1.2)"
             timer={timers.codex} 
+            secondaryTimer={timers.codex_secondary}
             percentage={100 - data.codex.rate_limit_pct} 
+            secondaryPercentage={100 - data.codex.rate_limit_pct_secondary}
             label="CODEX" 
             primaryLabel="CODEX REMAINING"
+            secondaryLabel="WEEKLY REMAINING"
+            stackLabels={true}
             connected={connected}
             dataLoaded={!!data.codex.loaded}
             introOrder={1}

@@ -87,6 +87,10 @@ html, body, #widget-root {
   font-size: 0.55rem;
 }
 
+.widget-container .orb-usage-lines {
+  gap: 2px !important;
+}
+
 /* Smaller timer text for widget */
 .widget-container .orb-timer {
   font-size: 1.2rem;
