@@ -163,6 +163,7 @@ state = {
         "reset_time_secondary": "",
         "resetsAt": "",
         "resetsAt_secondary": "",
+        "primary_window_started": False,
         "reset_credits": None,
         "logs": []
     }
@@ -174,6 +175,10 @@ def safe_pct(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+def codex_primary_window_started(window: dict) -> bool:
+    """Whether Codex has started consuming the current five-hour window."""
+    return safe_pct((window or {}).get("used_percent", 0)) > 0
 
 # Epoch of the last successful Claude usage poll (0 = never). Used to flag the
 # data as stale when the usage endpoint keeps failing (e.g. 429-ing).
@@ -223,6 +228,7 @@ def clamp_expired_windows():
     if _iso_in_past(co.get("resetsAt", "")):
         co["rate_limit_pct"] = 0.0
         co["status"] = "NORMAL"
+        co["primary_window_started"] = False
         co["resetsAt"] = ""
     if _iso_in_past(co.get("resetsAt_secondary", "")):
         co["rate_limit_pct_secondary"] = 0.0
@@ -471,6 +477,13 @@ async def poll_codex_oauth():
                 sec = rl.get("secondary_window") or {}
                 pri_used = safe_pct(pri.get("used_percent", 0))
                 sec_used = safe_pct(sec.get("used_percent", 0))
+                # ChatGPT returns a rolling reset_at even before the user has
+                # made the first request in a fresh five-hour window. In that
+                # state the timestamp is renewed on every poll, so rendering
+                # it as a countdown makes the UI stick around 04:59:xx.
+                # used_percent > 0 is the signal that the window has actually
+                # started and that its reset_at is meaningful.
+                primary_window_started = codex_primary_window_started(pri)
                 reset_at = pri.get("reset_at")
                 reset_at_secondary = sec.get("reset_at")
                 # "限额重置券"剩余张数(撞限额时可立刻重置额度)
@@ -479,10 +492,11 @@ async def poll_codex_oauth():
                 state["codex"]["loaded"] = True
                 state["codex"]["rate_limit_pct"] = pri_used
                 state["codex"]["rate_limit_pct_secondary"] = sec_used
+                state["codex"]["primary_window_started"] = primary_window_started
                 state["codex"]["reset_credits"] = reset_credits
                 state["codex"]["resetsAt"] = (
                     datetime.fromtimestamp(reset_at, tz=timezone.utc).isoformat()
-                    if reset_at else ""
+                    if primary_window_started and reset_at else ""
                 )
                 state["codex"]["resetsAt_secondary"] = (
                     datetime.fromtimestamp(reset_at_secondary, tz=timezone.utc).isoformat()
@@ -493,7 +507,8 @@ async def poll_codex_oauth():
 
                 timestamp = time.strftime("%H:%M:%S")
                 plan = usage.get("plan_type", "")
-                msg = f"ChatGPT/Codex: 5h {pri_used:.0f}% used, weekly {sec_used:.0f}% used (plan: {plan})"
+                primary_summary = f"{pri_used:.0f}% used" if primary_window_started else "ready"
+                msg = f"ChatGPT/Codex: 5h {primary_summary}, weekly {sec_used:.0f}% used (plan: {plan})"
                 if not state["codex"]["logs"] or state["codex"]["logs"][0]["msg"] != msg:
                     state["codex"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})
                     state["codex"]["logs"] = state["codex"]["logs"][:30]

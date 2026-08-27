@@ -29,6 +29,14 @@ const formatCountdownHMS = (resetsAtIso) => {
   }
 };
 
+// A fresh Codex five-hour window has no countdown until the first request is
+// made. The backend marks that state explicitly because the API still returns
+// a rolling reset_at timestamp while the window is idle.
+const formatCodexPrimaryCountdown = (codex) => {
+  if (codex?.primary_window_started === false) return "READY TO GO";
+  return formatCountdownHMS(codex?.resetsAt);
+};
+
 /* ── Orb configuration per type ── */
 const ORB_CONFIG = {
   claude: {
@@ -63,7 +71,7 @@ const ORB_CONFIG = {
       secondaryPercentage: 100 - d.codex.rate_limit_pct_secondary,
     }),
     getTimers: (d) => ({
-      timer: formatCountdownHMS(d.codex.resetsAt),
+      timer: formatCodexPrimaryCountdown(d.codex),
       secondaryTimer: formatCountdownHMS(d.codex.resetsAt_secondary),
     }),
   },
@@ -398,7 +406,7 @@ function WidgetApp() {
   const [data, setData] = useState({
     antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
     claude: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
-    codex: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
+    codex: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '', primary_window_started: false },
   });
   const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00' });
 

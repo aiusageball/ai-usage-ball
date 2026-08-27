@@ -142,6 +142,14 @@ const formatCountdownHMS = (resetsAtIso) => {
   }
 };
 
+// A fresh Codex five-hour window has no countdown until the first request is
+// made. The backend marks that state explicitly because the API still returns
+// a rolling reset_at timestamp while the window is idle.
+const formatCodexPrimaryCountdown = (codex) => {
+  if (codex?.primary_window_started === false) return "READY TO GO";
+  return formatCountdownHMS(codex?.resetsAt);
+};
+
 const SettingsModal = ({
   onClose,
   dataSource, setDataSource,
@@ -910,6 +918,7 @@ function App() {
       reset_time_secondary: "",
       resetsAt: "",
       resetsAt_secondary: "",
+      primary_window_started: false,
       reset_credits: null
     }
   });
@@ -1284,7 +1293,7 @@ function App() {
       setTimers({
         claude: formatCountdownHMS(d.claude.resetsAt),
         claude_secondary: formatCountdownHMS(d.claude.resetsAt_secondary),
-        codex: formatCountdownHMS(d.codex.resetsAt),
+        codex: formatCodexPrimaryCountdown(d.codex),
         codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary),
         antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary),
         antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt)

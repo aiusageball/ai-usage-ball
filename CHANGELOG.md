@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.4] — 2026-08-27
+
+### Fixed
+- Codex now shows `READY TO GO` until the current five-hour allowance is actually used, instead of looping at an almost-five-hour countdown before the window starts.
+
 ## [0.3.3] — 2026-08-26
 
 ### Added
