@@ -11,8 +11,14 @@ glance.
 </video>
 
 **Try the signed, notarized build (Apple Silicon, macOS 12+):** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
-or [see the website](https://aiusageball.com) for details. Every download
-includes a 30-day trial with no card required, and the first 100 users who try
+or [see the website](https://aiusageball.com) for details. Or with Homebrew:
+
+```bash
+brew tap aiusageball/aiusageball
+brew install --cask ai-usage-ball
+```
+
+Every download includes a 30-day trial with no card required, and the first 100 users who try
 the app and share genuine product feedback can apply for a free lifetime
 personal license.
 
