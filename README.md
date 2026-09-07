@@ -15,6 +15,7 @@ or [see the website](https://aiusageball.com) for details. Or with Homebrew:
 
 ```bash
 brew tap aiusageball/aiusageball
+brew trust aiusageball/aiusageball
 brew install --cask ai-usage-ball
 ```
 
