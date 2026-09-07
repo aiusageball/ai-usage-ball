@@ -7,7 +7,10 @@ glance.
 
 ![AI Usage Ball — three liquid orbs showing Claude, Codex, and Antigravity usage remaining](docs/screenshot.png)
 
-**Try the signed, notarized build:** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
+<video src="liquid-loop.mp4" autoplay loop muted playsinline width="720" title="Liquid orbs looping for Claude, Codex, and Antigravity quota">
+</video>
+
+**Try the signed, notarized build (Apple Silicon, macOS 12+):** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
 or [see the website](https://aiusageball.com) for details. Every download
 includes a 30-day trial with no card required, and the first 100 users who try
 the app and share genuine product feedback can apply for a free lifetime
