@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AI Usage Ball — See your Claude and Codex limits before you hit them</title>
-<meta name="description" content="A local macOS menu bar app that keeps Claude, Codex / ChatGPT, and Antigravity usage limits and reset times visible. The first 100 users who try it and share genuine feedback can apply for a free lifetime license." />
+<meta name="description" content="A local macOS menu bar app that keeps Claude, Codex / ChatGPT, and Antigravity usage limits and reset times visible. Try it free for 30 days, then A$9.99 once for a lifetime license." />
 <link rel="canonical" href="https://aiusageball.com/" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://aiusageball.com/" />
@@ -24,7 +24,7 @@
   "operatingSystem": "macOS 12 or later, Apple Silicon",
   "description": "A local macOS app that keeps Claude, Codex / ChatGPT, and Antigravity usage limits and reset times visible while you work.",
   "url": "https://aiusageball.com/",
-  "downloadUrl": "https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg",
+  "downloadUrl": "https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball-site.dmg",
   "image": "https://aiusageball.com/liquid-poster.png",
   "offers": {
     "@type": "Offer",
@@ -167,6 +167,12 @@
   .price li{display:flex;gap:10px;font-size:14.5px;color:#d7d7de}
   .price li::before{content:"✓";color:var(--claude);font-weight:700}
   .price .btn{width:100%;justify-content:center}
+  .pricing-small{padding-top:40px;padding-bottom:40px}
+  .pricing-small .sec-head h3{font-size:22px;margin:6px 0}
+  .pricing-small .price{max-width:340px;padding:22px 22px;border-color:var(--line)}
+  .pricing-small .price .amt{font-size:32px}
+  .pricing-small .price ul{margin:14px 0 16px;gap:7px}
+  .pricing-small .price li{font-size:13.5px}
 
   /* FAQ */
   .faq{max-width:760px;margin:0 auto;display:grid;gap:12px}
@@ -221,15 +227,14 @@
 <header class="hero">
   <div class="hero-glow"></div>
   <div class="wrap">
-    <span class="badge"><span class="led"></span> macOS menu bar app · local-only usage reads</span>
+    <span class="badge"><span class="led"></span> macOS menu bar app · now with Antigravity</span>
     <h1>Know your AI limits<br><span class="grad">before they stop your flow.</span></h1>
-    <p class="lead">Keep <b>Claude</b>, <b>Codex / ChatGPT</b>, and <b>Antigravity</b> usage limits and reset times visible while you work, so a session never ends as a surprise.</p>
+    <p class="lead">See how much quota you have <b>left</b>, not just what you have spent. <b>Antigravity</b>, <b>Claude</b>, and <b>Codex / ChatGPT</b> sit side by side as liquid orbs on your Mac, and the 30-day free trial shows all of them.</p>
     <div class="cta-row">
-      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Download free for macOS</a>
+      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball-site.dmg" class="btn btn-primary" download>↓ Download free for macOS</a>
       <a href="https://github.com/aiusageball/ai-usage-ball" class="btn btn-ghost">View source on GitHub</a>
     </div>
-    <div class="cta-note"><b>Founding offer:</b> the first 100 users who try the app and share genuine feedback can apply for a free lifetime license. No card required. <a href="#" onclick="openContact('founder');return false">Apply</a>.</div>
-    <div class="trust-row"><span><b>macOS 12+</b></span><span><b>Apple Silicon</b></span><span><b>Usage stays on your Mac</b></span></div>
+    <div class="trust-row"><span><b>macOS 12+</b></span><span><b>Apple Silicon</b></span><span><b>A$9.99 lifetime</b></span></div>
 
     <!-- ORBS -->
     <div class="orbs">
@@ -337,40 +342,12 @@
         <p>Inspect the readers and desktop code to see exactly what the app accesses on your Mac.</p></div>
       <div class="card"><div class="ic">🔒</div><h3>Stays on your Mac</h3>
         <p>Usage is read locally from your own sessions. Nothing is sent to any server but the providers' own.</p></div>
-      <div class="card"><div class="ic">🎁</div><h3>Free for early testers</h3>
-        <p>The first 100 users who try the app and share genuine feedback can apply for a free lifetime license.</p></div>
+      <div class="card"><div class="ic">🎁</div><h3>Pay once</h3>
+        <p>30 days free, then A$9.99 for a lifetime personal license. No subscription.</p></div>
     </div>
   </div>
 </section>
 
-<!-- PRICING -->
-<section id="pricing" style="background:var(--bg2)">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="eyebrow">Founding offer</div>
-      <h2>Free lifetime access for 100 early users.</h2>
-      <p>Use AI Usage Ball, share genuine product feedback, and apply for a free lifetime personal license.</p>
-    </div>
-    <div class="price-wrap">
-      <div class="price">
-        <div class="tag">AI USAGE BALL · FOUNDING USER</div>
-        <div class="amt">A$0<small> lifetime</small></div>
-        <div class="was">Limited to the first 100 eligible applicants</div>
-        <ul>
-          <li>Desktop liquid orbs (Claude · Codex · Antigravity)</li>
-          <li>Session, weekly & reset-credit tracking</li>
-          <li>Local-only usage reads</li>
-          <li>Automatic app updates</li>
-          <li>Free lifetime personal license for approved applicants</li>
-        </ul>
-        <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" id="buy" download>Download the free beta</a>
-        <div class="cta-note" style="margin-top:14px">After using the app, <a href="#" onclick="openContact('founder');return false">share your genuine feedback and apply</a>. Feedback can be positive or critical. No card required.</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FAQ -->
 <section id="faq">
   <div class="wrap">
     <div class="sec-head">
@@ -383,15 +360,44 @@
       <details><summary>Which tools are supported?</summary>
         <p>Claude (Anthropic), Codex / ChatGPT (OpenAI) and Antigravity. Each orb shows remaining quota and the time until it resets.</p></details>
       <details><summary>Is it a subscription?</summary>
-        <p>No. The first 100 users who try the app and share genuine feedback can apply for a free lifetime license, with no recurring charge.</p></details>
+        <p>No. It is A$9.99 once for a lifetime personal license, with no recurring charge.</p></details>
       <details><summary>What's the free trial?</summary>
-        <p>Every download includes 30 fully featured days with no card required. During the founding offer, the first 100 eligible users can apply for a free lifetime license after trying the app and sharing genuine feedback.</p></details>
+        <p>Every download includes 30 fully featured days with no card required. After that, a lifetime personal license is A$9.99, paid once.</p></details>
       <details><summary>Does it work on Apple Watch?</summary>
         <p>The Apple Watch companion is currently in development. The Mac app already shows the same live orbs and countdowns — watch support is coming in a future update.</p></details>
     </div>
   </div>
 </section>
 
+<!-- PRICING -->
+<section id="pricing" class="pricing-small">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="eyebrow">Pricing</div>
+      <h3>One price, yours for life.</h3>
+      <p>Try every feature free for 30 days, then pay once.</p>
+    </div>
+    <div class="price-wrap">
+      <div class="price">
+        <div class="tag">AI USAGE BALL · LIFETIME</div>
+        <div class="amt">A$9.99<small> lifetime</small></div>
+        <div class="was">One-time payment · no subscription</div>
+        <ul>
+          <li>Desktop liquid orbs (Claude · Codex · Antigravity)</li>
+          <li>Session, weekly & reset-credit tracking</li>
+          <li>Local-only usage reads</li>
+          <li>Automatic app updates</li>
+          <li>Lifetime personal license</li>
+        </ul>
+        <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball-site.dmg" class="btn btn-ghost" id="buy" download>Start the 30-day free trial</a>
+        <a href="https://aiusageball.lemonsqueezy.com/checkout/buy/c152b748-ebf0-45fc-8525-0df9afd9bc85" class="btn btn-primary" style="margin-top:10px">Buy lifetime license · A$9.99</a>
+        <div class="cta-note" style="margin-top:14px">No card required for the trial.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
 <section id="news" style="background:var(--bg2)">
   <div class="wrap">
     <div class="sec-head">
@@ -415,9 +421,9 @@
       <p>macOS 12+ · Apple Silicon (M1 or later)</p>
     </div>
     <div class="cta-row">
-      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" class="btn btn-primary" download>↓ Download the free beta</a>
+      <a href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball-site.dmg" class="btn btn-primary" download>↓ Download free trial for macOS</a>
     </div>
-    <div class="privacy">🔒 Local usage reads · 100 early users can earn free lifetime access by testing and sharing genuine feedback</div>
+    <div class="privacy">🔒 Local usage reads · 30 days free, then A$9.99 lifetime</div>
   </div>
 </section>
 
