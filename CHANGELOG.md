@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.5] — 2026-10-16
+
+### Added
+- Gemini 4 in Antigravity now gets its own usage gauge: a third ring on the Antigravity orb with its own remaining percentage and reset countdown.
+
 ## [0.3.4] — 2026-08-27
 
 ### Fixed

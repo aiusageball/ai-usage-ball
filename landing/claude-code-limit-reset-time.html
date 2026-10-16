@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>When does Claude Code usage reset? Session and weekly limits</title>
+<meta name="description" content="Understand when Claude Code usage resets, how session and weekly limits differ, and where to check the current reset time for your plan." />
+<link rel="canonical" href="https://aiusageball.com/claude-code-limit-reset-time" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://aiusageball.com/claude-code-limit-reset-time" />
+<meta property="og:title" content="When does Claude Code usage reset?" />
+<meta property="og:description" content="A practical guide to Claude Code session windows, weekly limits, and account-specific reset times." />
+<meta property="og:image" content="https://aiusageball.com/liquid-poster.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="When does Claude Code usage reset?" />
+<meta name="twitter:description" content="Find the current Claude Code reset time and avoid confusing usage limits with context limits." />
+<meta name="twitter:image" content="https://aiusageball.com/liquid-poster.png" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"When does Claude Code usage reset? Session and weekly limits","description":"A practical guide to Claude Code session windows, weekly limits, and account-specific reset times.","mainEntityOfPage":"https://aiusageball.com/claude-code-limit-reset-time","image":"https://aiusageball.com/liquid-poster.png","author":{"@type":"Organization","name":"AI Usage Ball"},"publisher":{"@type":"Organization","name":"AI Usage Ball"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do I see my Claude Code reset time?","acceptedAnswer":{"@type":"Answer","text":"Run /usage in an active Claude Code session and check the usage area in Claude Settings for the current account-specific status and reset information."}},{"@type":"Question","name":"Does starting a new Claude Code session reset usage?","acceptedAnswer":{"@type":"Answer","text":"No. A new session can change the conversation context, but it does not reset an account usage allowance. Wait for the account's reset time or use an available supported option."}},{"@type":"Question","name":"Do API-key users have the same reset behavior?","acceptedAnswer":{"@type":"Answer","text":"Not necessarily. Anthropic distinguishes subscription usage limits from API-key pay-as-you-go usage. Check how the current Claude Code session is authenticated."}}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="guide.css" />
+</head>
+<body>
+<nav><div class="wrap"><a class="logo" href="/"><span class="dot"></span>AI Usage Ball</a><div class="nav-links"><a href="/">Home</a><a href="/guides">Guides</a><a class="button" href="/#download">Start free</a></div></div></nav>
+<main><div class="wrap">
+  <div class="eyebrow">Claude Code guide</div>
+  <h1>When does Claude Code usage reset?</h1>
+  <p class="dek">The reset time depends on how you authenticate and which plan you use. Here is how to find the current answer for your account without confusing a new session with a new allowance.</p>
+  <div class="byline">Updated September 1, 2026 · For Claude Code users on macOS</div>
+  <img class="hero-image" src="liquid-poster.png" alt="AI Usage Ball showing a liquid usage gauge and reset state" />
+  <article>
+    <h2>Start with the account-specific status</h2>
+    <p>In an active Claude Code session, run <code>/usage</code> to see the plan usage limits and current rate-limit status. You can also review the usage area in Claude Settings. The exact allowance and reset information can change by plan, account, workspace, and authentication method.</p>
+    <pre><span class="command">/usage</span></pre>
+    <p>When the session reaches a limit, Claude may show a message with the relevant reset time. Treat that message and the current account usage view as more reliable than a fixed number copied from an old post.</p>
+
+    <h2>Session limits and weekly limits are different</h2>
+    <p>Many individual Claude plans have a session-based usage window, and paid plans can also have a weekly limit. Anthropic describes the session allowance as resetting on a rolling window for supported plans, while a weekly limit can have its own account-assigned reset time. Your account may show more than one limit at once.</p>
+    <div class="callout"><strong>A new conversation does not equal a reset.</strong> Starting a fresh Claude Code session can give you a cleaner context, but it cannot refresh an account-side usage allowance.</div>
+
+    <h2>Authentication changes the answer</h2>
+    <p>Anthropic distinguishes Claude Code sessions authenticated with a Claude subscription from sessions using an API key. Subscription usage is governed by the plan's included limits; API-key usage is pay-as-you-go and is shown as cost rather than a single subscription quota. If the status looks unexpected, check whether <code>ANTHROPIC_API_KEY</code> is set in the environment and which account the session used.</p>
+    <p>Claude, Claude Code, and Claude Desktop usage can share a plan allowance for supported subscription users. A long conversation in one surface can therefore affect what is available in another.</p>
+
+    <h2>What to do before the reset</h2>
+    <ul>
+      <li>Save your current changes and note the reset shown by the account.</li>
+      <li>Use <code>/context</code> or <code>/compact</code> when the problem is conversation length rather than usage allowance.</li>
+      <li>Switch to a smaller task or a suitable lower-cost model when that still meets the goal.</li>
+      <li>Check whether your plan offers usage credits or another supported continuation option before enabling paid usage.</li>
+    </ul>
+
+    <h2>Keep the reset visible</h2>
+    <p>Checking <code>/usage</code> is the right diagnostic step. A persistent desktop indicator helps with the next decision: whether to start a long task now, switch to another assistant, or wait until the reset.</p>
+    <p><a href="/?ref=seo_claude_reset">AI Usage Ball</a> reads available local usage information and presents Claude, Codex / ChatGPT, and Antigravity status as liquid gauges on macOS. It is intended as a glanceable companion, not a replacement for the provider's account page.</p>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a href="https://support.claude.com/en/articles/14553413-claude-code-cheatsheet">Anthropic: Claude Code cheatsheet</a></li>
+      <li><a href="https://support.claude.com/en/articles/14552983-models-usage-and-limits-in-claude-code">Anthropic: Models, usage, and limits in Claude Code</a></li>
+      <li><a href="https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work">Anthropic: How do usage and length limits work?</a></li>
+    </ul>
+  </article>
+  <section class="cta"><h2>See your next reset before the task stops.</h2><p>A beautiful macOS widget for keeping AI coding usage and reset times in sight.</p><a class="button" href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" download>Download free for macOS</a></section>
+</div></main>
+<footer><div class="wrap"><div>AI Usage Ball · Your AI limits, always in sight.</div><div class="footer-links"><a href="/">Home</a><a href="/guides">Guides</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/changelog">Changelog</a></div></div></footer>
+</body>
+</html>

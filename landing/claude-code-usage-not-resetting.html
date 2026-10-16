@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude Code usage not resetting? A practical troubleshooting guide</title>
+<meta name="description" content="Claude Code usage not resetting? Check the signed-in account, API-key authentication, session versus context limits, and the current reset status." />
+<link rel="canonical" href="https://aiusageball.com/claude-code-usage-not-resetting" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://aiusageball.com/claude-code-usage-not-resetting" />
+<meta property="og:title" content="Claude Code usage not resetting?" />
+<meta property="og:description" content="A practical checklist for diagnosing Claude Code usage and reset status on macOS." />
+<meta property="og:image" content="https://aiusageball.com/liquid-poster.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Claude Code usage not resetting?" />
+<meta name="twitter:description" content="Check authentication, account, context, and reset status before reinstalling Claude Code." />
+<meta name="twitter:image" content="https://aiusageball.com/liquid-poster.png" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"Claude Code usage not resetting? A practical troubleshooting guide","description":"A practical checklist for diagnosing Claude Code usage and reset status on macOS.","mainEntityOfPage":"https://aiusageball.com/claude-code-usage-not-resetting","image":"https://aiusageball.com/liquid-poster.png","author":{"@type":"Organization","name":"AI Usage Ball"},"publisher":{"@type":"Organization","name":"AI Usage Ball"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why is Claude Code still showing the old usage limit?","acceptedAnswer":{"@type":"Answer","text":"First verify the account and authentication method, then run /usage again and review the usage area in Claude Settings. Recent status can take time to refresh, and different limits can have different reset times."}},{"@type":"Question","name":"Does reinstalling Claude Code reset usage?","acceptedAnswer":{"@type":"Answer","text":"No. Usage limits are associated with the account, plan, workspace, or billing method, not simply the local application installation."}},{"@type":"Question","name":"Could this be a context limit instead of a usage limit?","acceptedAnswer":{"@type":"Answer","text":"Yes. A context or length limit concerns one conversation, while a usage limit concerns how much you can use over a period of time. Use the relevant status message and /usage output to tell them apart."}}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="guide.css" />
+</head>
+<body>
+<nav><div class="wrap"><a class="logo" href="/"><span class="dot"></span>AI Usage Ball</a><div class="nav-links"><a href="/">Home</a><a href="/guides">Guides</a><a class="button" href="/#download">Start free</a></div></div></nav>
+<main><div class="wrap">
+  <div class="eyebrow">Claude Code troubleshooting</div>
+  <h1>Claude Code usage is not resetting? Check these things first.</h1>
+  <p class="dek">A reset problem is often an account, authentication, or limit-type problem. Use this checklist before deleting local files or assuming the provider's meter is stuck.</p>
+  <div class="byline">Updated September 1, 2026 · For Claude Code users on macOS</div>
+  <img class="hero-image" src="liquid-poster.png" alt="AI Usage Ball showing a visible reset countdown for AI coding usage" />
+  <article>
+    <h2>1. Run the official usage check again</h2>
+    <p>Inside the active Claude Code session, run <code>/usage</code>. Then open Claude Settings and compare the account-specific usage status. Look for which limit is exhausted and the reset time attached to that limit.</p>
+    <pre><span class="command">/usage</span></pre>
+    <p>Do not compare a session window with a weekly allowance as if they were the same meter. A plan can show more than one limit, each with its own status.</p>
+
+    <h2>2. Confirm the account and workspace</h2>
+    <p>Sign out and back in only after you have confirmed which account the session should use. A browser account, a desktop account, a team workspace, and a terminal session can be easy to mix up. Check the email, organization, and plan shown by the current client.</p>
+    <div class="callout"><strong>A different account can look like a broken reset.</strong> If one account has recovered while another has not, compare the exact signed-in identity and workspace before changing anything locally.</div>
+
+    <h2>3. Check for API-key authentication</h2>
+    <p>Claude Code behaves differently when it is authenticated with a Claude subscription versus an API key. Anthropic documents subscription limits separately from API-key pay-as-you-go usage. If <code>ANTHROPIC_API_KEY</code> is present in your environment, the session may be using API billing instead of the subscription allowance you expected.</p>
+    <p>In that case, the absence of a subscription-style reset countdown does not necessarily mean that the usage system is broken. Verify the authentication path and the relevant Console or account billing view.</p>
+
+    <h2>4. Rule out a context or length limit</h2>
+    <p>A context limit applies to one conversation. It can make a session feel blocked even when the account still has usage available. A usage limit is a time-based allowance across supported Claude surfaces. Starting a new conversation may help with context, but it cannot reset the account usage allowance.</p>
+    <ul>
+      <li>Use <code>/context</code> to inspect a large session.</li>
+      <li>Use <code>/compact</code> when reducing context is appropriate.</li>
+      <li>Use <code>/usage</code> for the account usage state.</li>
+    </ul>
+
+    <h2>5. Allow for status refresh and the correct reset window</h2>
+    <p>Refresh the usage view, reopen the client, and check the displayed time zone and date. A short delay in status reporting can happen, and a weekly limit may reset at a different time from a session limit. Do not rely on a reset time copied from another user's plan.</p>
+
+    <h2>What will not reset an account limit</h2>
+    <ul>
+      <li>Opening a new conversation or a new terminal session.</li>
+      <li>Reinstalling the local application.</li>
+      <li>Deleting project files or changing the working directory.</li>
+      <li>Switching models without checking which allowance the plan uses.</li>
+    </ul>
+
+    <h2>When to contact support</h2>
+    <p>If the account-specific usage view still shows an exhausted limit after the stated reset time, collect the account, workspace, client, model, time zone, and a screenshot of the current status. Contact the provider through the signed-in support path. Do not include secret API keys in screenshots or issue reports.</p>
+
+    <h2>Keep the reset state visible</h2>
+    <p><a href="/?ref=seo_claude_not_resetting">AI Usage Ball</a> is designed for the gap between checking the official usage page and starting the next task. It shows available local usage information for Claude, Codex / ChatGPT, and Antigravity as a persistent visual gauge on macOS.</p>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a href="https://support.claude.com/en/articles/14553413-claude-code-cheatsheet">Anthropic: Claude Code cheatsheet</a></li>
+      <li><a href="https://support.claude.com/en/articles/14552983-models-usage-and-limits-in-claude-code">Anthropic: Models, usage, and limits in Claude Code</a></li>
+      <li><a href="https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work">Anthropic: How do usage and length limits work?</a></li>
+    </ul>
+  </article>
+  <section class="cta"><h2>Make the next reset hard to miss.</h2><p>Keep AI coding usage visible on the desktop instead of discovering the limit halfway through a task.</p><a class="button" href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" download>Download free for macOS</a></section>
+</div></main>
+<footer><div class="wrap"><div>AI Usage Ball · Your AI limits, always in sight.</div><div class="footer-links"><a href="/">Home</a><a href="/guides">Guides</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/changelog">Changelog</a></div></div></footer>
+</body>
+</html>

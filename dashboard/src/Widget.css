@@ -100,6 +100,20 @@ html, body, #widget-root {
   font-size: 0.7rem;
 }
 
+.widget-container .orb-timer-tertiary {
+  font-size: 0.58rem;
+  margin-top: 1px;
+}
+
+.widget-container .orb-timer-wrapper.has-tertiary .orb-timer {
+  font-size: 1.02rem;
+}
+
+.widget-container .orb-timer-wrapper.has-tertiary .orb-timer-secondary {
+  font-size: 0.6rem;
+  margin-top: 1px;
+}
+
 /* Hide the main app styles that don't apply to widget */
 .pulse-desktop-environment,
 .popover-window,

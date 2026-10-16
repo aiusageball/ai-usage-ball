@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to check Google Antigravity usage quota and limits</title>
+<meta name="description" content="Learn how to check Google Antigravity model quota, remaining usage, and credits from the CLI, then keep the status visible on macOS." />
+<link rel="canonical" href="https://aiusageball.com/antigravity-usage-quota" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://aiusageball.com/antigravity-usage-quota" />
+<meta property="og:title" content="How to check Google Antigravity usage quota" />
+<meta property="og:description" content="A practical guide to the Antigravity usage panel, model quotas, credits, and a persistent macOS view." />
+<meta property="og:image" content="https://aiusageball.com/liquid-poster.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="How to check Google Antigravity usage quota" />
+<meta name="twitter:description" content="Check Antigravity quota and credit status before starting a long agent task." />
+<meta name="twitter:image" content="https://aiusageball.com/liquid-poster.png" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"How to check Google Antigravity usage quota and limits","description":"A practical guide to the Antigravity usage panel, model quotas, credits, and a persistent macOS view.","mainEntityOfPage":"https://aiusageball.com/antigravity-usage-quota","image":"https://aiusageball.com/liquid-poster.png","author":{"@type":"Organization","name":"AI Usage Ball"},"publisher":{"@type":"Organization","name":"AI Usage Ball"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do I check Antigravity quota?","acceptedAnswer":{"@type":"Answer","text":"In the Antigravity CLI, enter /usage or its /quota alias and press Enter to open the Model Quotas panel. The official panel refreshes quota status when it opens."}},{"@type":"Question","name":"What does the Antigravity usage panel show?","acceptedAnswer":{"@type":"Answer","text":"The panel can show model quota usage and remaining requests or tokens for supported models. Account entitlements and available options vary by plan and sign-in."}},{"@type":"Question","name":"Are Antigravity credits the same as quota?","acceptedAnswer":{"@type":"Answer","text":"No. Credits and baseline model quotas are separate concepts. Check the current Antigravity usage and credits views for the account-specific balance and eligibility."}}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="guide.css" />
+</head>
+<body>
+<nav><div class="wrap"><a class="logo" href="/"><span class="dot"></span>AI Usage Ball</a><div class="nav-links"><a href="/">Home</a><a href="/guides">Guides</a><a class="button" href="/#download">Start free</a></div></div></nav>
+<main><div class="wrap">
+  <div class="eyebrow">Google Antigravity guide</div>
+  <h1>How to check your Antigravity usage quota before the next agent task</h1>
+  <p class="dek">Antigravity can expose more than one kind of usage state. The official quota panel is the detailed check; a persistent desktop view helps you notice the state before starting work.</p>
+  <div class="byline">Updated September 1, 2026 · For Antigravity users on macOS</div>
+  <img class="hero-image" src="liquid-poster.png" alt="AI Usage Ball showing Antigravity usage alongside Claude and Codex gauges" />
+  <article>
+    <h2>Open the official Model Quotas panel</h2>
+    <p>In the Antigravity CLI, type <code>/usage</code> and press Enter. The command has a <code>/quota</code> alias. The official documentation says the panel refreshes model configuration and quota status when it opens.</p>
+    <pre><span class="command">/usage</span></pre>
+    <p>Use the official panel when you need the account-level detail. It can show a breakdown of remaining requests or tokens for supported models, depending on what your account and plan expose.</p>
+
+    <h2>Read model quota separately from credits</h2>
+    <p>Antigravity's usage experience can include baseline model quotas, a statusline indicator, low-quota warnings, and AI credits. These are related but not interchangeable. A model can be available while a credit balance is low, or a credit option can be unavailable for the current account.</p>
+    <div class="callout"><strong>Do not publish a fixed quota table as if it were permanent.</strong> Entitlements, model availability, and limits depend on the signed-in account and can change. Link to the official usage and plans documentation when explaining current behavior.</div>
+
+    <h2>Why quota can change faster than expected</h2>
+    <p>Agent work is not always a fixed one-request unit. The model, reasoning mode, tools, context, and task complexity can affect how much work is consumed. Check the model-level status before a long build, browser task, or multi-step refactor.</p>
+    <p>If the panel looks stale, close it and open it again to trigger the documented refresh path. Also verify that the CLI and desktop or IDE client are signed in to the same account if you are comparing screens.</p>
+
+    <h2>A simple workflow for fewer surprises</h2>
+    <ol>
+      <li><strong>Check before the long task.</strong> Open <code>/usage</code> or <code>/quota</code> and note the relevant model.</li>
+      <li><strong>Match the model to the work.</strong> Use a lighter or faster option when it is sufficient.</li>
+      <li><strong>Leave a margin.</strong> Do not start a long agent task when the relevant quota is already near its warning threshold.</li>
+      <li><strong>Verify after a reset or plan change.</strong> Reopen the panel instead of relying on a previous percentage.</li>
+    </ol>
+
+    <h2>Keep Antigravity status in sight on macOS</h2>
+    <p>The official panel remains the source of truth. <a href="/?ref=seo_antigravity_quota">AI Usage Ball</a> is a companion view for the glanceable moment: it brings available local usage information for Antigravity, Claude, and Codex / ChatGPT into liquid desktop gauges so you can decide what to use next.</p>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a href="https://www.antigravity.google/docs/cli/commands/usage">Google Antigravity Docs: Model Quotas (/usage)</a></li>
+      <li><a href="https://www.antigravity.google/docs/cli/credits/">Google Antigravity Docs: AI Credits</a></li>
+      <li><a href="https://www.antigravity.google/docs/models/">Google Antigravity Docs: Models</a></li>
+    </ul>
+  </article>
+  <section class="cta"><h2>Know what is left before the agent starts.</h2><p>A beautiful macOS widget for keeping multiple AI coding-tool limits visible in one place.</p><a class="button" href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" download>Download free for macOS</a></section>
+</div></main>
+<footer><div class="wrap"><div>AI Usage Ball · Your AI limits, always in sight.</div><div class="footer-links"><a href="/">Home</a><a href="/guides">Guides</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/changelog">Changelog</a></div></div></footer>
+</body>
+</html>

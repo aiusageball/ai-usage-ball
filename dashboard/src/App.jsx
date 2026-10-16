@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { eggBeginDrag, eggConsumeClickSuppress } from './easterEgg';
+import { resolveBackendUrl } from './backend';
 import './App.css';
 
 const TRIAL_DAYS = 30;
@@ -148,6 +149,31 @@ const formatCountdownHMS = (resetsAtIso) => {
 const formatCodexPrimaryCountdown = (codex) => {
   if (codex?.primary_window_started === false) return "READY TO GO";
   return formatCountdownHMS(codex?.resetsAt);
+};
+
+const parseManualPeerAddress = (value) => {
+  const input = value.trim();
+  if (!input) return null;
+
+  // Keep accepting a bare IP/hostname for older peers that still use 8000;
+  // new dynamic-port peers can be entered as host:port (or [IPv6]:port).
+  if (input.startsWith('[')) {
+    const end = input.indexOf(']');
+    if (end < 0) return null;
+    const host = input.slice(1, end).trim();
+    const suffix = input.slice(end + 1);
+    const port = suffix ? Number(suffix.startsWith(':') ? suffix.slice(1) : NaN) : 8000;
+    return host && Number.isInteger(port) && port > 0 && port <= 65535 ? { host, port } : null;
+  }
+
+  const separator = input.lastIndexOf(':');
+  if (separator > 0 && input.indexOf(':') === separator) {
+    const host = input.slice(0, separator).trim();
+    const port = Number(input.slice(separator + 1));
+    return host && Number.isInteger(port) && port > 0 && port <= 65535 ? { host, port } : null;
+  }
+
+  return { host: input, port: 8000 };
 };
 
 const SettingsModal = ({
@@ -488,7 +514,7 @@ const SettingsModal = ({
 
               <div className="setting-section">
                 <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Usage Ball v0.3.2</p>
+                <p className="section-desc">AI Usage Ball v0.3.4</p>
                 <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
               </div>
 
@@ -504,17 +530,38 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null }) => {
-  const radius = 65;
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, backendUrl = null }) => {
+  // Which "fix it" prompt to show in place of the countdown, if any. Disk
+  // access wins over login: when macOS refuses to open Chrome's cookie DB,
+  // logging in can't help, so telling the user to do it is actively wrong.
+  const authFix = needsDiskAccess
+    ? { hint: 'GRANT ACCESS', cls: 'orb-login-hint long', cta: '⚠ ALLOW FULL DISK ACCESS', on: onNeedsDiskAccess, title: 'Open System Settings › Privacy & Security › Full Disk Access' }
+    : needsLogin
+      ? { hint: 'SIGN IN', cls: 'orb-login-hint', cta: '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: 'Open claude.ai to sign in' }
+      : null;
+  const hasSecondary = secondaryPercentage !== undefined;
+  const hasTertiary = tertiaryPercentage !== undefined;
+
+  // When a third inner ring is present (Antigravity: Gemini 3.8 + Claude + Gemini 4),
+  // slightly expand the outer ring and tighten spacing so all three concentric
+  // rings sit cleanly around the countdown readout without crowding it.
+  const radius = hasTertiary ? 70 : 65;
+  const strokeW = hasTertiary ? 7 : 8;
   const circumference = 2 * Math.PI * radius;
   const validPct = Math.max(0, Math.min(100, percentage));
   const strokeDashoffset = circumference - (circumference * validPct) / 100;
 
-  const hasSecondary = secondaryPercentage !== undefined;
-  const radiusSec = 47;
+  const radiusSec = hasTertiary ? 56 : 47;
+  const strokeWSec = hasTertiary ? 5.5 : 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
   const validPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
   const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * validPctSec) / 100;
+
+  const radiusTer = 43;
+  const strokeWTer = 4.5;
+  const circumferenceTer = 2 * Math.PI * radiusTer;
+  const validPctTer = hasTertiary ? Math.max(0, Math.min(100, tertiaryPercentage)) : 0;
+  const strokeDashoffsetTer = circumferenceTer - (circumferenceTer * validPctTer) / 100;
 
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
@@ -532,7 +579,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
     return false;
   };
 
-  const isCritical = validPct < 10 || (hasSecondary && validPctSec < 10) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer));
+  const isCritical = validPct < 10 || (hasSecondary && validPctSec < 10) || (hasTertiary && validPctTer < 10) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
   const isCriticalRef = useRef(isCritical);
   isCriticalRef.current = isCritical;
 
@@ -695,14 +742,16 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
   // 到真实值,方向和液体的"从空到满"一致,也不会有那种突兀的满环写扫。
   const ringPct = revealed ? validPct : 0;
   const ringPctSec = revealed ? validPctSec : 0;
+  const ringPctTer = revealed ? validPctTer : 0;
   const displayStrokeDashoffset = circumference - (circumference * ringPct) / 100;
   const displayStrokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
+  const displayStrokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
 
   const isExhausted = validPct <= 0;
 
   return (
     <div className="orb-wrapper orb-intro-appear" style={{ animationDelay: `${introDelay}ms` }} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      <div className={`orb-glass-breather ${offline || needsLogin ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
+      <div className={`orb-glass-breather ${offline || authFix ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
         <div
           className="orb-glass"
           ref={orbGlassRef}
@@ -723,7 +772,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
             <video
               ref={videoRef}
               className="video-blob"
-              src="http://127.0.0.1:8000/liquid-loop.mp4?v=3"
+              src={backendUrl ? `${backendUrl}/liquid-loop.mp4?v=3` : undefined}
               preload="auto"
               loop
               muted
@@ -773,17 +822,23 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             )}
+            {hasTertiary && (
+              <filter id={`glow-ter-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            )}
           </defs>
           
           {/* Track background (dimmed a lot more than the progress arc so
               "used" vs "remaining" actually reads at a glance) */}
-          <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.16" strokeWidth="8" fill="none" />
+          <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.16" strokeWidth={strokeW} fill="none" />
           
           {/* Progress Ring */}
           <circle 
             cx="100" cy="100" r={radius} 
             stroke={color} 
-            strokeWidth="8" 
+            strokeWidth={strokeW} 
             fill="none" 
             strokeLinecap="round"
             strokeDasharray={circumference}
@@ -793,15 +848,15 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
           />
 
           {/* Inner Rings */}
-          <circle cx="100" cy="100" r="54" stroke={hasSecondary ? secondaryColor : color} opacity="0.3" strokeWidth="1" fill="none" />
+          <circle cx="100" cy="100" r={hasTertiary ? 62 : 54} stroke={hasSecondary ? secondaryColor : color} opacity="0.3" strokeWidth="1" fill="none" />
           
           {hasSecondary ? (
             <>
-              <circle cx="100" cy="100" r={radiusSec} stroke={secondaryColor} opacity="0.16" strokeWidth="6" fill="none" />
+              <circle cx="100" cy="100" r={radiusSec} stroke={secondaryColor} opacity="0.16" strokeWidth={strokeWSec} fill="none" />
               <circle
                 cx="100" cy="100" r={radiusSec}
                 stroke={secondaryColor}
-                strokeWidth="6"
+                strokeWidth={strokeWSec}
                 fill="none"
                 strokeLinecap="round"
                 strokeDasharray={circumferenceSec}
@@ -813,22 +868,43 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
           ) : (
             <circle cx="100" cy="100" r="45" stroke={color} opacity="0.08" strokeWidth="10" fill="none" />
           )}
+
+          {hasTertiary && (
+            <>
+              <circle cx="100" cy="100" r="49" stroke={tertiaryColor || '#c084fc'} opacity="0.28" strokeWidth="1" fill="none" />
+              <circle cx="100" cy="100" r={radiusTer} stroke={tertiaryColor || '#c084fc'} opacity="0.18" strokeWidth={strokeWTer} fill="none" />
+              <circle
+                cx="100" cy="100" r={radiusTer}
+                stroke={tertiaryColor || '#c084fc'}
+                strokeWidth={strokeWTer}
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray={circumferenceTer}
+                strokeDashoffset={displayStrokeDashoffsetTer}
+                transform="rotate(-90 100 100)"
+                filter={`url(#glow-ter-${label.replace(/\s+/g, '-')})`}
+              />
+            </>
+          )}
         </svg>
 
         {/* Digital Timer */}
-        <div className="orb-timer-wrapper" style={{ opacity: (revealed || needsLogin) ? 1 : 0 }}>
-          {needsLogin ? (
+        <div className={`orb-timer-wrapper${tertiaryTimer ? ' has-tertiary' : ''}`} style={{ opacity: (revealed || authFix) ? 1 : 0 }}>
+          {authFix ? (
             <span
-              className="orb-timer orb-login-hint"
-              onClick={onNeedsLogin || undefined}
-              style={{ cursor: onNeedsLogin ? 'pointer' : 'default' }}
-              title="Open claude.ai to sign in"
-            >SIGN&nbsp;IN</span>
+              className={`orb-timer ${authFix.cls}`}
+              onClick={authFix.on || undefined}
+              style={{ cursor: authFix.on ? 'pointer' : 'default' }}
+              title={authFix.title}
+            >{authFix.hint}</span>
           ) : (
           <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
           )}
-          {needsLogin ? null : secondaryTimer ? (
+          {authFix ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
+          ) : null}
+          {authFix ? null : tertiaryTimer ? (
+            <span className="orb-timer-tertiary" style={{ color: tertiaryColor || '#c084fc', textShadow: `0 0 8px ${tertiaryColor || '#c084fc'}` }}>{tertiaryTimer}</span>
           ) : null}
         </div>
 
@@ -854,18 +930,21 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
             </button>
           )}
         </div>
-        {needsLogin ? (
+        {authFix ? (
           <p
             className="orb-subtitle orb-offline orb-login-cta"
-            onClick={onNeedsLogin || undefined}
-            style={{ cursor: onNeedsLogin ? 'pointer' : 'default' }}
-            title="Open claude.ai to sign in"
-          >⚠ LOG IN TO CLAUDE.AI</p>
+            onClick={authFix.on || undefined}
+            style={{ cursor: authFix.on ? 'pointer' : 'default' }}
+            title={authFix.title}
+          >{authFix.cta}</p>
         ) : offline ? (
           <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle">{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
+            {hasTertiary && (
+              <p className="orb-subtitle">{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
+            )}
             <p className="orb-subtitle">{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </div>
@@ -887,17 +966,22 @@ function App() {
       loaded: false,
       rate_limit_pct: 0.0,
       rate_limit_pct_secondary: 0.0,
+      rate_limit_pct_tertiary: 0.0,
       status: "NORMAL",
       status_secondary: "NORMAL",
+      status_tertiary: "NORMAL",
       reset_time: "",
       reset_time_secondary: "",
+      reset_time_tertiary: "",
       resetsAt: "",
-      resetsAt_secondary: ""
+      resetsAt_secondary: "",
+      resetsAt_tertiary: ""
     },
     claude: {
       provider: "Claude",
       loaded: false,
       needsLogin: false,
+      needsDiskAccess: false,
       rate_limit_pct: 0.0,
       rate_limit_pct_secondary: 0.0,
       status: "NORMAL",
@@ -946,6 +1030,17 @@ function App() {
   const [showTeamNamePrompt, setShowTeamNamePrompt] = useState(false);
   const [teamNameDraft, setTeamNameDraft] = useState('');
 
+  // The Tauri shell chooses a free local port before it starts the backend.
+  // Resolve it once so every main-window request uses the same port.
+  const [backendUrl, setBackendUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    resolveBackendUrl().then((url) => {
+      if (!cancelled) setBackendUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   // Generate a stable instance ID once — this is how a pinned teammate stays
   // pinned across their app restarts and IP changes (their IP isn't stable,
   // this ID is).
@@ -957,8 +1052,8 @@ function App() {
 
   // Push sharing on/off + display name to the local backend whenever they change.
   useEffect(() => {
-    if (!teamInstanceId) return; // wait for the ID to exist first
-    fetch('http://127.0.0.1:8000/api/team-settings', {
+    if (!backendUrl || !teamInstanceId) return; // wait for backend + ID
+    fetch(`${backendUrl}/api/team-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -967,24 +1062,26 @@ function App() {
         instance_id: teamInstanceId,
       }),
     }).catch(() => {});
-  }, [teamSharingEnabled, teamDisplayName, teamInstanceId]);
+  }, [backendUrl, teamSharingEnabled, teamDisplayName, teamInstanceId]);
 
   // Keep the backend's poller aware of who's pinned, so it keeps retrying a
   // teammate even after they fall out of mDNS range (different network, etc.).
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/team-pins', {
+    if (!backendUrl) return;
+    fetch(`${backendUrl}/api/team-pins`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pinned: pinnedPeers }),
     }).catch(() => {});
-  }, [pinnedPeers]);
+  }, [backendUrl, pinnedPeers]);
 
   // Poll for discovered/pinned/manual peers. Runs regardless of whether
   // sharing is on — you can watch teammates without broadcasting yourself.
   useEffect(() => {
+    if (!backendUrl) return undefined;
     let cancelled = false;
     const poll = () => {
-      fetch('http://127.0.0.1:8000/api/team-peers')
+      fetch(`${backendUrl}/api/team-peers`)
         .then(r => r.json())
         .then(d => { if (!cancelled) setTeamPeersLive(d.peers || []); })
         .catch(() => {});
@@ -992,7 +1089,7 @@ function App() {
     poll();
     const id = setInterval(poll, 6000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  }, [backendUrl]);
 
   const pinTeamPeer = (peer) => {
     if (pinnedPeers.length >= 3) return;
@@ -1008,13 +1105,17 @@ function App() {
   };
 
   const addTeamPeerManual = () => {
-    const host = teamManualHost.trim();
-    if (!host) return;
+    if (!backendUrl) return;
+    const peer = parseManualPeerAddress(teamManualHost);
+    if (!peer) {
+      setTeamManualError('Use a host or host:port, e.g. 192.168.1.20:43127');
+      return;
+    }
     setTeamManualError('');
-    fetch('http://127.0.0.1:8000/api/team-peers/manual', {
+    fetch(`${backendUrl}/api/team-peers/manual`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ host, port: 8000 }),
+      body: JSON.stringify(peer),
     })
       .then(async (r) => {
         const d = await r.json();
@@ -1202,7 +1303,8 @@ function App() {
     codex: "00:00:00",
     codex_secondary: "00:00:00",
     antigravity: "00:00:00",
-    antigravity_claude: "00:00:00"
+    antigravity_claude: "00:00:00",
+    antigravity_gemini4: "00:00:00"
   });
   
   const [currentTime, setCurrentTime] = useState("");
@@ -1251,10 +1353,11 @@ function App() {
   }, [data]);
 
   useEffect(() => {
+    if (!backendUrl) return undefined;
     let eventSource = null;
 
     const connectSSE = () => {
-      eventSource = new EventSource('http://127.0.0.1:8000/api/stream');
+      eventSource = new EventSource(`${backendUrl}/api/stream`);
 
       eventSource.onopen = () => {
         setConnected(true);
@@ -1285,7 +1388,7 @@ function App() {
         eventSource.close();
       }
     };
-  }, []);
+  }, [backendUrl]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1296,7 +1399,8 @@ function App() {
         codex: formatCodexPrimaryCountdown(d.codex),
         codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary),
         antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary),
-        antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt)
+        antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt),
+        antigravity_gemini4: formatCountdownHMS(d.antigravity.resetsAt_tertiary)
       });
 
       const date = new Date();
@@ -1400,8 +1504,16 @@ function App() {
             dataLoaded={!!data.claude.loaded}
             introOrder={0}
             ambientPulse={ambientOrb === 'claude'}
-            needsLogin={!!data.claude.needsLogin && !data.claude.loaded}
+            // `&& !loaded` alone hid this for the case that actually happens in
+            // practice: data loaded fine once, then auth died mid-session (the
+            // cookie is gone and the read-only OAuth token expired). `stale`
+            // gates that case so a transient blip doesn't flash SIGN IN;
+            // `!loaded` still covers cold start, where `stale` can't be true.
+            needsLogin={!!data.claude.needsLogin && (!data.claude.loaded || !!data.claude.stale)}
             onNeedsLogin={() => openUrl('https://claude.ai')}
+            needsDiskAccess={!!data.claude.needsDiskAccess && (!data.claude.loaded || !!data.claude.stale)}
+            onNeedsDiskAccess={() => invoke('open_full_disk_access_settings').catch(() => {})}
+            backendUrl={backendUrl}
             onPopOut={() => { launchWidget('claude'); setHasPoppedOutWidget(true); }}
           />
 
@@ -1424,28 +1536,34 @@ function App() {
             introOrder={1}
             resetCredits={data.codex.reset_credits}
             ambientPulse={ambientOrb === 'codex'}
+            backendUrl={backendUrl}
             onPopOut={() => { launchWidget('codex'); setHasPoppedOutWidget(true); }}
           />
 
-          {/* Orb 3: Antigravity (Cyan-Blue + Orange) */}
+          {/* Orb 3: Antigravity (Cyan-Blue + Orange + Violet for Gemini 4) */}
           <DualRingOrb 
             color="#06b6d4" 
             secondaryColor="#fb923c"
+            tertiaryColor="#c084fc"
             glowColor="rgba(6, 182, 212, 0.4)" 
             videoFilter="hue-rotate(185deg) saturate(1.8) brightness(1.2)"
             timer={timers.antigravity} 
             secondaryTimer={timers.antigravity_claude}
+            tertiaryTimer={timers.antigravity_gemini4}
             percentage={100 - data.antigravity.rate_limit_pct_secondary} 
             secondaryPercentage={100 - data.antigravity.rate_limit_pct} 
+            tertiaryPercentage={100 - (data.antigravity.rate_limit_pct_tertiary ?? 0)}
             label="ANTIGRAVITY" 
             primaryLabel="GEMINI REMAINING"
             secondaryLabel="CLAUDE REMAINING"
+            tertiaryLabel="GEMINI 4 REMAINING"
             stackLabels={true}
             connected={connected}
             dataLoaded={!!data.antigravity.loaded}
             introOrder={2}
             offline={data.antigravity.available === false}
             ambientPulse={ambientOrb === 'antigravity'}
+            backendUrl={backendUrl}
             onPopOut={() => { launchWidget('antigravity'); setHasPoppedOutWidget(true); }}
           />
 
@@ -1531,7 +1649,7 @@ function App() {
                 <input
                   className="ando-input"
                   type="text"
-                  placeholder="or teammate's local IP"
+                  placeholder="or teammate's IP:port"
                   value={teamManualHost}
                   onChange={(e) => setTeamManualHost(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addTeamPeerManual(); }}

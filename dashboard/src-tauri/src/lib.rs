@@ -1,3 +1,4 @@
+use std::net::TcpListener;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -7,13 +8,52 @@ use tauri::{Emitter, Manager};
 /// Holds the spawned Python backend so it can be killed when the app exits.
 struct BackendProcess(Mutex<Option<Child>>);
 
+/// The port selected for this app instance's local backend. It is exposed to
+/// every webview through `get_backend_url`, so the main dashboard and any
+/// popped-out widget always connect to the same backend.
+struct BackendPort(u16);
+
+const PREFERRED_BACKEND_PORT: u16 = 8000;
+
+fn choose_backend_port() -> u16 {
+    // Keep the old port when it is available, so existing local integrations
+    // keep working. If another local service owns it, ask the OS for a free
+    // ephemeral port instead of making the app go offline.
+    if TcpListener::bind(("0.0.0.0", PREFERRED_BACKEND_PORT)).is_ok() {
+        return PREFERRED_BACKEND_PORT;
+    }
+
+    TcpListener::bind(("0.0.0.0", 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|address| address.port())
+        .unwrap_or(PREFERRED_BACKEND_PORT)
+}
+
+#[tauri::command]
+fn get_backend_url(state: tauri::State<'_, BackendPort>) -> String {
+    format!("http://127.0.0.1:{}", state.0)
+}
+
+/// Open System Settings straight to Privacy & Security › Full Disk Access.
+/// Recent macOS puts Chrome's cookie DB behind that permission, so the Claude
+/// reader needs it; the orb shows a "GRANT ACCESS" prompt that lands here.
+/// (Uses `open` rather than the opener plugin: the x-apple.systempreferences
+/// scheme isn't in the plugin's URL scope.)
+#[tauri::command]
+fn open_full_disk_access_settings() -> Result<(), String> {
+    Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("failed to open System Settings: {e}"))
+}
+
 /// Kill the backend and ALL its descendants. The bundled backend is a
 /// PyInstaller one-file binary: a bootloader process that spawns the real
-/// server as a child. Killing just our direct child (the bootloader) orphans
-/// the server, which keeps port 8000 bound forever — the next app launch then
-/// can't start its own backend and shows stale data. We spawn the backend in
-/// its own process group (pgid = its pid) so one group-kill takes out the
-/// whole tree.
+/// server as a child. Killing just our direct child (the bootloader) can orphan
+/// the server and leave its local port bound for the next launch. We spawn the
+/// backend in its own process group (pgid = its pid) so one group-kill takes
+/// out the whole tree.
 fn kill_backend(state: &BackendProcess) {
     if let Ok(mut guard) = state.0.lock() {
         if let Some(child) = guard.as_mut() {
@@ -76,7 +116,7 @@ fn secure_set(key: String, value: String) -> Result<(), String> {
     if status.success() { Ok(()) } else { Err("keychain write failed".into()) }
 }
 
-/// Start the FastAPI backend that the frontend connects to on 127.0.0.1:8000.
+/// Start the FastAPI backend on the port selected for this app instance.
 ///
 /// Order of preference:
 ///  1. The self-contained sidecar bundled as an app **resource**
@@ -89,11 +129,11 @@ fn secure_set(key: String, value: String) -> Result<(), String> {
 ///  2. A venv + server.py under ~/Library/Application Support (dev machines
 ///     that set this up), overridable via AIPULSE_PYTHON / AIPULSE_SERVER.
 ///  3. The repo's server/venv (running from a source checkout).
-fn spawn_backend(app: &tauri::App) -> Option<Child> {
+fn spawn_backend(app: &tauri::App, port: u16) -> Option<Child> {
     // Sweep up any backend left over from a previous run (crash, or an older
-    // version that didn't group-kill). A stale instance keeps port 8000 bound,
-    // which would silently prevent this launch's backend from starting and
-    // leave the orbs frozen on old data.
+    // version that didn't group-kill). A stale instance can keep its selected
+    // port bound, which would silently prevent this launch's backend from
+    // starting and leave the orbs frozen on old data.
     let _ = Command::new("pkill")
         .args(["-f", "aipulse-server/aipulse-server"])
         .status();
@@ -114,7 +154,9 @@ fn spawn_backend(app: &tauri::App) -> Option<Child> {
     if let Ok(resource_dir) = app.path().resource_dir() {
         let sidecar = resource_dir.join("backend").join("aipulse-server");
         if sidecar.exists() {
-            match quiet(Command::new(&sidecar)) {
+            let mut cmd = Command::new(&sidecar);
+            cmd.env("AIPULSE_PORT", port.to_string());
+            match quiet(cmd) {
                 Ok(child) => {
                     println!("Started bundled AI Usage Ball backend (pid {})", child.id());
                     return Some(child);
@@ -148,7 +190,7 @@ fn spawn_backend(app: &tauri::App) -> Option<Child> {
     }
 
     let mut cmd = Command::new(&python);
-    cmd.arg(&server);
+    cmd.arg(&server).env("AIPULSE_PORT", port.to_string());
     match quiet(cmd) {
         Ok(child) => {
             println!("Started AI Usage Ball backend from venv (pid {})", child.id());
@@ -254,13 +296,15 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            let backend = spawn_backend(app);
+            let backend_port = choose_backend_port();
+            let backend = spawn_backend(app, backend_port);
+            app.manage(BackendPort(backend_port));
             app.manage(BackendProcess(Mutex::new(backend)));
             #[cfg(target_os = "macos")]
             spawn_widget_hover_poller(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_provider_app, secure_get, secure_set])
+        .invoke_handler(tauri::generate_handler![open_provider_app, secure_get, secure_set, get_backend_url, open_full_disk_access_settings])
         .on_window_event(|window, event| {
             // Closing the main window only HIDES it (so a desktop widget can
             // bring it back via show()), rather than destroying it. The app
@@ -279,7 +323,7 @@ pub fn run() {
             // the app. Handle BOTH exit events: in practice quitting via the
             // Apple quit event only reliably delivers RunEvent::Exit here, and
             // relying on ExitRequested alone left zombie backends holding
-            // port 8000.
+            // the dynamically selected backend port.
             match event {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     if let Some(state) = app_handle.try_state::<BackendProcess>() {

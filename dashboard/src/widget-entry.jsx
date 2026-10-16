@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { resolveBackendUrl } from './backend';
 import './Widget.css';
 
 /* ── Shared helpers (duplicated from App.jsx to keep widget self-contained) ── */
@@ -78,40 +80,64 @@ const ORB_CONFIG = {
   antigravity: {
     color: '#06b6d4',
     secondaryColor: '#fb923c',
+    tertiaryColor: '#c084fc',
     glowColor: 'rgba(6, 182, 212, 0.4)',
     videoFilter: 'hue-rotate(185deg) saturate(1.8) brightness(1.2)',
     label: 'ANTIGRAVITY',
     primaryLabel: 'GEMINI REMAINING',
     secondaryLabel: 'CLAUDE REMAINING',
+    tertiaryLabel: 'GEMINI 4 REMAINING',
     stackLabels: true,
     getData: (d) => ({
       percentage: 100 - d.antigravity.rate_limit_pct_secondary,
       secondaryPercentage: 100 - d.antigravity.rate_limit_pct,
+      tertiaryPercentage: 100 - (d.antigravity.rate_limit_pct_tertiary ?? 0),
     }),
     getTimers: (d) => ({
       timer: formatCountdownHMS(d.antigravity.resetsAt_secondary),
       secondaryTimer: formatCountdownHMS(d.antigravity.resetsAt),
+      tertiaryTimer: formatCountdownHMS(d.antigravity.resetsAt_tertiary),
     }),
   },
 };
 
 /* ── DualRingOrb (self-contained copy for widget isolation) ── */
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, stackLabels = false, videoFilter, offline = false, resetCredits = null, dataLoaded = true }) => {
-  const radius = 65;
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, offline = false, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null }) => {
+  // Which "fix it" prompt replaces the countdown, if any. Disk access wins
+  // over login: when macOS refuses to open Chrome's cookie DB, logging in
+  // can't help, so telling the user to do it is actively wrong. (Mirrors
+  // the main window's DualRingOrb in App.jsx.)
+  const authFix = needsDiskAccess
+    ? { hint: 'GRANT ACCESS', cls: 'orb-login-hint long', cta: '⚠ ALLOW FULL DISK ACCESS', on: onNeedsDiskAccess, title: 'Open System Settings › Privacy & Security › Full Disk Access' }
+    : needsLogin
+      ? { hint: 'SIGN IN', cls: 'orb-login-hint', cta: '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: 'Open claude.ai to sign in' }
+      : null;
+  const hasSecondary = secondaryPercentage !== undefined;
+  const hasTertiary = tertiaryPercentage !== undefined;
+
+  const radius = hasTertiary ? 70 : 65;
+  const strokeW = hasTertiary ? 7 : 8;
   const circumference = 2 * Math.PI * radius;
   const validPct = Math.max(0, Math.min(100, percentage));
 
-  const hasSecondary = secondaryPercentage !== undefined;
-  const radiusSec = 47;
+  const radiusSec = hasTertiary ? 56 : 47;
+  const strokeWSec = hasTertiary ? 5.5 : 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
   const validPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
+
+  const radiusTer = 43;
+  const strokeWTer = 4.5;
+  const circumferenceTer = 2 * Math.PI * radiusTer;
+  const validPctTer = hasTertiary ? Math.max(0, Math.min(100, tertiaryPercentage)) : 0;
 
   // 弹出 widget 时如果还没拿到真实数据(percentage 默认按 100% 算),环先保持
   // "空"而不是显示成满环再猛地跳到真实值——跟主界面同一个道理(见 App.jsx)。
   const ringPct = dataLoaded ? validPct : 0;
   const ringPctSec = dataLoaded ? validPctSec : 0;
+  const ringPctTer = dataLoaded ? validPctTer : 0;
   const strokeDashoffset = circumference - (circumference * ringPct) / 100;
   const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
+  const strokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
 
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
@@ -128,7 +154,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
     return false;
   };
 
-  const isCritical = validPct < 10 || (hasSecondary && validPctSec < 10) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer));
+  const isCritical = validPct < 10 || (hasSecondary && validPctSec < 10) || (hasTertiary && validPctTer < 10) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
   const isCriticalRef = useRef(isCritical);
   isCriticalRef.current = isCritical;
 
@@ -270,7 +296,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
 
   return (
     <div className="orb-wrapper" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      <div className={`orb-glass-breather ${offline ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
+      <div className={`orb-glass-breather ${offline || authFix ? 'offline-state' : isExhausted ? 'exhausted-state' : isCritical ? 'critical-state' : ''}`}>
         <div
           className="orb-glass"
           onMouseEnter={handleEnter}
@@ -285,7 +311,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
             <video
               ref={videoRef}
               className="video-blob"
-              src="http://127.0.0.1:8000/liquid-loop.mp4?v=3"
+              src={backendUrl ? `${backendUrl}/liquid-loop.mp4?v=3` : undefined}
               preload="auto"
               loop
               muted
@@ -335,11 +361,17 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             )}
+            {hasTertiary && (
+              <filter id={`glow-ter-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            )}
           </defs>
-          <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.15" strokeWidth="8" fill="none" />
+          <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.15" strokeWidth={strokeW} fill="none" />
           <circle
             cx="100" cy="100" r={radius}
-            stroke={color} strokeWidth="8" fill="none"
+            stroke={color} strokeWidth={strokeW} fill="none"
             opacity="0.9" strokeLinecap="round"
             strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
             transform="rotate(-90 100 100)"
@@ -347,10 +379,10 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
           />
           {hasSecondary ? (
             <>
-              <circle cx="100" cy="100" r={radiusSec} stroke={secondaryColor} opacity="0.1" strokeWidth="6" fill="none" />
+              <circle cx="100" cy="100" r={radiusSec} stroke={secondaryColor} opacity="0.1" strokeWidth={strokeWSec} fill="none" />
               <circle
                 cx="100" cy="100" r={radiusSec}
-                stroke={secondaryColor} strokeWidth="6" fill="none"
+                stroke={secondaryColor} strokeWidth={strokeWSec} fill="none"
                 opacity="0.5" strokeLinecap="round"
                 strokeDasharray={circumferenceSec} strokeDashoffset={strokeDashoffsetSec}
                 transform="rotate(-90 100 100)"
@@ -360,12 +392,38 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
           ) : (
             <circle cx="100" cy="100" r="45" stroke={color} opacity="0.08" strokeWidth="10" fill="none" />
           )}
+          {hasTertiary && (
+            <>
+              <circle cx="100" cy="100" r={radiusTer} stroke={tertiaryColor || '#c084fc'} opacity="0.14" strokeWidth={strokeWTer} fill="none" />
+              <circle
+                cx="100" cy="100" r={radiusTer}
+                stroke={tertiaryColor || '#c084fc'} strokeWidth={strokeWTer} fill="none"
+                opacity="0.85" strokeLinecap="round"
+                strokeDasharray={circumferenceTer} strokeDashoffset={strokeDashoffsetTer}
+                transform="rotate(-90 100 100)"
+                filter={`url(#glow-ter-${label.replace(/\s+/g, '-')})`}
+              />
+            </>
+          )}
         </svg>
 
-        <div className="orb-timer-wrapper">
-          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
-          {secondaryTimer ? (
+        <div className={`orb-timer-wrapper${tertiaryTimer ? ' has-tertiary' : ''}`}>
+          {authFix ? (
+            <span
+              className={`orb-timer ${authFix.cls}`}
+              onClick={(e) => { e.stopPropagation(); if (authFix.on) authFix.on(); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{ cursor: authFix.on ? 'pointer' : 'default' }}
+              title={authFix.title}
+            >{authFix.hint}</span>
+          ) : (
+            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
+          )}
+          {authFix ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
+          ) : null}
+          {authFix ? null : tertiaryTimer ? (
+            <span className="orb-timer-tertiary" style={{ color: tertiaryColor || '#c084fc', textShadow: `0 0 8px ${tertiaryColor || '#c084fc'}` }}>{tertiaryTimer}</span>
           ) : null}
         </div>
 
@@ -377,11 +435,22 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, seco
 
       <div className="orb-label-container">
         <h3 className="orb-title">{label}</h3>
-        {offline ? (
+        {authFix ? (
+          <p
+            className="orb-subtitle orb-offline orb-login-cta"
+            onClick={(e) => { e.stopPropagation(); if (authFix.on) authFix.on(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{ cursor: authFix.on ? 'pointer' : 'default' }}
+            title={authFix.title}
+          >{authFix.cta}</p>
+        ) : offline ? (
           <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle">{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
+            {hasTertiary && (
+              <p className="orb-subtitle">{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
+            )}
             <p className="orb-subtitle">{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </div>
@@ -404,20 +473,30 @@ function WidgetApp() {
   const config = ORB_CONFIG[orbType] || ORB_CONFIG.claude;
 
   const [data, setData] = useState({
-    antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
+    antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, rate_limit_pct_tertiary: 0, resetsAt: '', resetsAt_secondary: '', resetsAt_tertiary: '' },
     claude: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
     codex: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '', primary_window_started: false },
   });
-  const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00' });
+  const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00', tertiaryTimer: undefined });
+  const [backendUrl, setBackendUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    resolveBackendUrl().then((url) => {
+      if (!cancelled) setBackendUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
   // SSE connection
   useEffect(() => {
+    if (!backendUrl) return undefined;
     let es = null;
     const connect = () => {
-      es = new EventSource('http://127.0.0.1:8000/api/stream');
+      es = new EventSource(`${backendUrl}/api/stream`);
       es.onmessage = (e) => {
         try { setData(JSON.parse(e.data)); } catch (err) {}
       };
@@ -428,7 +507,7 @@ function WidgetApp() {
     };
     connect();
     return () => { if (es) es.close(); };
-  }, []);
+  }, [backendUrl]);
 
   // Timer tick
   useEffect(() => {
@@ -525,20 +604,34 @@ function WidgetApp() {
       <DualRingOrb
         color={config.color}
         secondaryColor={config.secondaryColor}
+        tertiaryColor={config.tertiaryColor}
         glowColor={config.glowColor}
         videoFilter={config.videoFilter}
         timer={timers.timer}
         secondaryTimer={timers.secondaryTimer}
+        tertiaryTimer={timers.tertiaryTimer}
         percentage={orbData.percentage}
         secondaryPercentage={orbData.secondaryPercentage}
+        tertiaryPercentage={orbData.tertiaryPercentage}
         label={config.label}
         primaryLabel={config.primaryLabel}
         secondaryLabel={config.secondaryLabel}
+        tertiaryLabel={config.tertiaryLabel}
         stackLabels={config.stackLabels}
         connected={true}
         dataLoaded={!!data[orbType].loaded}
         resetCredits={orbType === 'codex' && data.codex ? data.codex.reset_credits : null}
         offline={orbType === 'antigravity' && data.antigravity && data.antigravity.available === false}
+        // Both Claude sources dead (browser cookie gone + read-only OAuth token
+        // expired). `stale` gates the mid-session case so a transient blip
+        // doesn't flash SIGN IN; `!loaded` covers cold start where `stale`
+        // can't be true yet (it's time-since-last-success, and there is none).
+        needsLogin={orbType === 'claude' && !!data.claude && !!data.claude.needsLogin && (!data.claude.loaded || !!data.claude.stale)}
+        onNeedsLogin={() => openUrl('https://claude.ai').catch(() => {})}
+        // macOS refused to open Chrome's cookie DB (EPERM) — needs Full Disk Access, not a login.
+        needsDiskAccess={orbType === 'claude' && !!data.claude && !!data.claude.needsDiskAccess && (!data.claude.loaded || !!data.claude.stale)}
+        onNeedsDiskAccess={() => invoke('open_full_disk_access_settings').catch(() => {})}
+        backendUrl={backendUrl}
       />
 
       {updateReady && (

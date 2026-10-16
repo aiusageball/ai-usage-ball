@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Where to find Codex usage limits and reset information on macOS</title>
+<meta name="description" content="Find Codex usage limits, remaining allowance, credits, and reset information on macOS without relying on an old screenshot or fixed quota number." />
+<link rel="canonical" href="https://aiusageball.com/where-to-find-codex-usage-limits" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://aiusageball.com/where-to-find-codex-usage-limits" />
+<meta property="og:title" content="Where to find Codex usage limits" />
+<meta property="og:description" content="A practical guide to checking Codex usage, credits, and reset information on macOS." />
+<meta property="og:image" content="https://aiusageball.com/liquid-poster.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Where to find Codex usage limits" />
+<meta name="twitter:description" content="Check your current Codex allowance and reset information before starting a long coding task." />
+<meta name="twitter:image" content="https://aiusageball.com/liquid-poster.png" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"Where to find Codex usage limits and reset information on macOS","description":"A practical guide to checking Codex usage, credits, and reset information on macOS.","mainEntityOfPage":"https://aiusageball.com/where-to-find-codex-usage-limits","image":"https://aiusageball.com/liquid-poster.png","author":{"@type":"Organization","name":"AI Usage Ball"},"publisher":{"@type":"Organization","name":"AI Usage Ball"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Where can I check my Codex usage?","acceptedAnswer":{"@type":"Answer","text":"Open the Codex or ChatGPT usage area and review the usage page or Settings usage view for the account and workspace you are using. In an active Codex CLI session, /status may show the current status when supported."}},{"@type":"Question","name":"Why does Codex usage vary between tasks?","acceptedAnswer":{"@type":"Answer","text":"OpenAI says Codex usage depends on the plan, task size and complexity, model, context, and where the task runs. A message is not a fixed unit of quota."}},{"@type":"Question","name":"Do Codex credits replace the plan limit?","acceptedAnswer":{"@type":"Answer","text":"Credits are a separate pay-as-you-go balance available only on supported plans and accounts. Check the options shown in your own usage view before relying on them."}}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="guide.css" />
+</head>
+<body>
+<nav><div class="wrap"><a class="logo" href="/"><span class="dot"></span>AI Usage Ball</a><div class="nav-links"><a href="/">Home</a><a href="/guides">Guides</a><a class="button" href="/#download">Start free</a></div></div></nav>
+<main><div class="wrap">
+  <div class="eyebrow">Codex usage guide</div>
+  <h1>Where to find Codex usage limits and reset information on macOS</h1>
+  <p class="dek">The useful answer is not a quota number copied from somebody else. It is the current allowance and reset information for the account, plan, and workspace you are using right now.</p>
+  <div class="byline">Updated September 1, 2026 · For Codex users on macOS</div>
+  <img class="hero-image" src="liquid-poster.png" alt="AI Usage Ball showing Claude, Codex, and Antigravity usage as liquid gauges" />
+  <article>
+    <p>Codex usage is easy to miss when you move between the desktop app, CLI, and other ChatGPT surfaces. Before a long coding task, check the account usage view instead of assuming that every message costs the same amount.</p>
+
+    <h2>Where to check Codex usage</h2>
+    <ol>
+      <li>Open the Codex or ChatGPT usage area for the account you intend to use.</li>
+      <li>Look for the usage summary, limit banner, or Settings usage view. The exact labels and available options depend on your plan and account.</li>
+      <li>If you are working in the CLI, try <code>/status</code> in the active session when that command is available.</li>
+    </ol>
+    <p>OpenAI's current guidance says to use the Codex usage page or limit banner when you are near a limit. It also explains that plan limits and credit options vary, so the account-specific view is the source of truth.</p>
+
+    <h2>What the usage view is telling you</h2>
+    <p>Depending on your account, you may see more than one allowance: a short usage window, a weekly allowance, a monthly or workspace allowance, or a credit balance. Treat these as separate states. One can be available while another is nearly exhausted.</p>
+    <div class="callout"><strong>Do not turn a percentage into a fixed number of prompts.</strong> Codex work consumes different amounts depending on the size and complexity of the task, the model, the context carried into the task, and where the work runs.</div>
+
+    <h2>Why the same plan can feel different on different days</h2>
+    <p>A small function and a long-running repository refactor are not equivalent units of usage. A task that reads many files, runs tools, or keeps a large context can use more of the available allowance than a short request. This is why old screenshots and “one message equals X percent” rules are unreliable.</p>
+    <p>Codex usage can also share an agentic allowance with other supported ChatGPT features. If the remaining amount looks surprising, verify the signed-in account, workspace, and the surface where the usage was generated before concluding that the meter is wrong.</p>
+
+    <h2>What to do when you are close to the limit</h2>
+    <ul>
+      <li>Save the current work and check the reset information before starting another long task.</li>
+      <li>Use a smaller scope or a lighter model when that is appropriate for the task.</li>
+      <li>Check whether your account offers credits, an available reset, an upgrade, or only the option to wait.</li>
+      <li>Do not assume reinstalling the client will refresh an account-side limit.</li>
+    </ul>
+
+    <h2>Keep Codex status visible while you work</h2>
+    <p>The official usage page is the right place for account details. A persistent indicator is useful for the moment after you leave that page: before launching a deep task, while switching between coding assistants, or when deciding whether to wait for a reset.</p>
+    <p><a href="/?ref=seo_codex_limits">AI Usage Ball</a> is a local macOS widget that brings available Claude, Codex / ChatGPT, and Antigravity usage information into three glanceable liquid gauges. It is designed to keep the next decision visible without opening another dashboard.</p>
+
+    <h2>Sources</h2>
+    <ul class="sources">
+      <li><a href="https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan/">OpenAI Help: Using Codex with your ChatGPT plan</a></li>
+      <li><a href="https://help.openai.com/en/articles/20001478">OpenAI Help: Reviewing Work and Codex usage in ChatGPT Desktop</a></li>
+      <li><a href="https://help.openai.com/en/articles/20001507-paid-weekly-work-and-codex-rate-limit-resets">OpenAI Help: Paid weekly Work and Codex rate-limit resets</a></li>
+    </ul>
+  </article>
+  <section class="cta"><h2>See the remaining allowance before the next task.</h2><p>A beautiful desktop widget for keeping Claude, Codex / ChatGPT, and Antigravity usage and reset information in sight.</p><a class="button" href="https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg" download>Download free for macOS</a></section>
+</div></main>
+<footer><div class="wrap"><div>AI Usage Ball · Your AI limits, always in sight.</div><div class="footer-links"><a href="/">Home</a><a href="/guides">Guides</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/changelog">Changelog</a></div></div></footer>
+</body>
+</html>

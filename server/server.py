@@ -6,6 +6,11 @@ import time
 import random
 import asyncio
 import subprocess
+import shutil
+import signal
+import select
+import pty
+import glob
 import urllib.request
 import urllib.error
 from contextlib import asynccontextmanager
@@ -17,9 +22,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from pydantic import BaseModel
 
-# Overridable only for local dev/testing (e.g. running two instances on one
-# machine to simulate two teammates for Team View — see docs/team-view-test.md).
-# Never overridden in the shipped app.
+# The Tauri shell selects a free local port and passes it here when the app is
+# packaged. The environment override remains useful for local development and
+# for running two instances to simulate Team View.
 SERVER_PORT = int(os.environ.get("AIPULSE_PORT", "8000"))
 
 
@@ -128,12 +133,16 @@ state = {
         "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
+        "rate_limit_pct_tertiary": 0.0,
         "status": "NORMAL",
         "status_secondary": "NORMAL",
+        "status_tertiary": "NORMAL",
         "reset_time": "",
         "reset_time_secondary": "",
+        "reset_time_tertiary": "",
         "resetsAt": "",
         "resetsAt_secondary": "",
+        "resetsAt_tertiary": "",
         "logs": []
     },
     "claude": {
@@ -150,6 +159,8 @@ state = {
         "updatedAt": "",      # ISO time of last successful poll
         "stale": False,       # True when we haven't refreshed for a while (e.g. 429)
         "needsLogin": False,  # True 当 cookie+OAuth 都拿不到 → 前端提示去登录 claude.ai
+        "needsDiskAccess": False,  # True 当 macOS 拒绝读 Chrome cookie 库(EPERM) → 提示授予完全磁盘访问
+        "cliRefresh": "",  # 最近一次"委托 Claude CLI 刷新 token"的结果(状态文字,不含值)
         "logs": []
     },
     "codex": {
@@ -254,28 +265,132 @@ def fetch_claude_usage(token):
 # claude.ai 就一直有效,不碰 OAuth token 轮换、不和 Claude CLI 抢刷新,所以不会再触发
 # 服务端把 refresh_token 吊销。这是 Claude 用量的主源;OAuth token 只当只读兜底。
 _cached_claude_sessionkey = None
+# Per-browser outcome of the last cookie read — status text only, NEVER cookie
+# values. Surfaced in the log and /api/stats so a dead cookie path can be told
+# apart from "you're simply logged out": Chrome's cookie DB is encrypted with
+# a key held in the macOS Keychain ("Chrome Safe Storage"), and the Keychain
+# ACL is per-binary — every rebuild of the sidecar is a new binary that has to
+# be granted access again. A headless backend can't answer that prompt, so
+# decryption fails and, before this, was swallowed as "no cookie", which then
+# told the user to log in when logging in could not possibly help.
+_claude_cookie_diag = {}
+# True when the OS itself refused to open Chrome's cookie DB (EPERM). On
+# recent macOS that file is behind Full Disk Access — a login prompt is the
+# wrong advice for it, the user has to grant the app access instead.
+_claude_needs_disk_access = False
 _CLAUDE_WEB_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36")
 
+def _chrome_cookie_files():
+    """Chrome cookie DB candidates on macOS, modern location first.
+
+    browser_cookie3 0.20.1 only knows the pre-2021 path
+    (`Default/Cookies`) on macOS — it added `Network/Cookies` for Windows
+    but never for mac. Current Chrome keeps the live DB at
+    `Default/Network/Cookies`; the old location is gone or a stale stub,
+    which is exactly what surfaced as "Unable to read database file". So
+    find the file ourselves and hand it to the library explicitly.
+    """
+    import glob
+    out = []
+    for channel in ("", " Beta", " Dev", " Canary"):
+        base = os.path.expanduser(f"~/Library/Application Support/Google/Chrome{channel}")
+        if not os.path.isdir(base):
+            continue
+        profiles = [os.path.join(base, "Default")] + sorted(glob.glob(os.path.join(base, "Profile *")))
+        for pdir in profiles:
+            for rel in ("Network/Cookies", "Cookies"):
+                p = os.path.join(pdir, rel)
+                if os.path.isfile(p):
+                    out.append(p)
+    return out
+
+
 def _get_claude_sessionkey():
     """从浏览器(Chrome/Safari/Firefox/Edge/Brave)读 claude.ai 的 sessionKey,带缓存。"""
-    global _cached_claude_sessionkey
+    global _cached_claude_sessionkey, _claude_cookie_diag, _claude_needs_disk_access
     if _cached_claude_sessionkey:
         return _cached_claude_sessionkey
     try:
         import browser_cookie3
     except ImportError:
+        _claude_cookie_diag = {"browser_cookie3": "not installed"}
         return None
-    for loader in (browser_cookie3.chrome, browser_cookie3.safari,
-                   browser_cookie3.firefox, browser_cookie3.edge, browser_cookie3.brave):
+    diag = {}
+    _claude_needs_disk_access = False
+
+    def _scan(name, make_jar):
+        """Run one loader; returns the key or None, recording status in diag."""
         try:
-            for c in loader(domain_name="claude.ai"):
+            saw_any = False
+            for c in make_jar():
+                saw_any = True
                 if c.name == "sessionKey" and str(c.value).startswith("sk-ant"):
-                    _cached_claude_sessionkey = c.value
+                    diag[name] = "ok"
                     return c.value
-        except Exception:
-            continue
+            diag[name] = "no sessionKey" if saw_any else "no claude.ai cookies"
+        except Exception as e:
+            # Error text only (class + message, truncated); no values ever.
+            diag[name] = f"{type(e).__name__}: {str(e)[:90]}"
+        return None
+
+    # Chrome first, with explicit paths (see _chrome_cookie_files).
+    chrome_files = _chrome_cookie_files()
+    for path in chrome_files:
+        short = path.split("/Application Support/Google/")[-1]
+        # File-level probe so "Unable to read database file" can be told
+        # apart: OS permission (errno), empty/stub file, or not sqlite at all.
+        # Only size/errno/magic header are recorded — never file contents.
+        try:
+            size = os.path.getsize(path)
+            with open(path, "rb") as fh:
+                magic = fh.read(16)
+            diag[f"probe[{short}]"] = f"size={size} sqlite={'yes' if magic.startswith(b'SQLite format 3') else 'NO'}"
+        except OSError as e:
+            diag[f"probe[{short}]"] = f"open failed errno={e.errno} ({e.strerror})"
+            if e.errno == 1:  # EPERM: the OS said no, not the file's own mode bits
+                _claude_needs_disk_access = True
+        key = _scan(f"chrome[{short}]", lambda p=path: browser_cookie3.chrome(cookie_file=p, domain_name="claude.ai"))
+        if key:
+            _claude_cookie_diag = diag
+            _cached_claude_sessionkey = key
+            return key
+    if not chrome_files:
+        # Fall back to the library's own (legacy) path search so the diag
+        # still says something useful when the dir layout is unexpected.
+        key = _scan("chrome", lambda: browser_cookie3.chrome(domain_name="claude.ai"))
+        if key:
+            _claude_cookie_diag = diag
+            _cached_claude_sessionkey = key
+            return key
+
+    for loader in (browser_cookie3.safari, browser_cookie3.firefox,
+                   browser_cookie3.edge, browser_cookie3.brave):
+        name = getattr(loader, "__name__", "?")
+        key = _scan(name, lambda l=loader: l(domain_name="claude.ai"))
+        if key:
+            _claude_cookie_diag = diag
+            _cached_claude_sessionkey = key
+            return key
+    _claude_cookie_diag = diag
     return None
+
+
+def _claude_cookie_diag_summary():
+    """One short line for the in-app log, e.g. 'chrome: no sessionKey'."""
+    if not _claude_cookie_diag:
+        return ""
+    # Chrome is the source that matters on macOS (Safari needs Full Disk
+    # Access the app doesn't have); lead with it, then anything else notable.
+    parts = []
+    # Chrome entries are keyed "chrome[<path>]" (one per candidate DB).
+    for key, val in _claude_cookie_diag.items():
+        if key.startswith("chrome"):
+            parts.append(f"{key}: {val}")
+    for key in ("safari", "firefox", "edge", "brave", "browser_cookie3"):
+        if key in _claude_cookie_diag:
+            parts.append(f"{key}: {_claude_cookie_diag[key]}")
+    return " · ".join(parts[:3])
 
 _cached_claude_org_id = None
 
@@ -309,12 +424,12 @@ def fetch_claude_usage_via_cookie():
 
 CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
 
-def _read_oauth_token():
+def _read_oauth_credential():
     """读现成的 Claude OAuth access_token(**只读,绝不刷新**)。同时看两处:
     ~/.claude/.credentials.json 文件 和 macOS 钥匙串 —— 新版 Claude Code 把凭据
-    存进钥匙串、不再更新那个文件,所以只读文件会拿到过期 token。这里取两者中未过期
-    且最新的那个。绝不碰 refresh_token(和 CLI 抢一次性轮换会触发服务端吊销整条链)。"""
-    now = time.time()
+    存进钥匙串、不再更新那个文件,所以只读文件会拿到过期 token。这里取两者中
+    过期时间最晚的那个。绝不碰 refresh_token(和 CLI 抢一次性轮换会触发服务端吊销整条链)。
+    返回 (access_token, expires_epoch_s) 或 (None, 0.0)。"""
     best = None  # (token, expires_epoch_s)
 
     def consider(raw):
@@ -348,23 +463,183 @@ def _read_oauth_token():
     except Exception:
         pass
 
-    if not best:
-        return None
-    # 优先返回未过期的;都过期也返回最新那个(让 API 自己判 401,不在这儿武断丢弃)
-    return best[0]
+    return best if best else (None, 0.0)
+
+def _read_oauth_token():
+    return _read_oauth_credential()[0]
+
+# ── 委托 Claude CLI 刷新 OAuth token(对标 CodexBar 的 delegated refresh)──
+# 我们自己绝不能刷新 token(见下面 NOTE),但可以让 *CLI* 去刷:在一个 pty 里跑
+# `claude /usage`,CLI 为了渲染用量面板必须调 API,access_token 过期就会用自己的
+# refresh_token 换新并写回钥匙串——这是 CLI 自己的正常轮换,不存在"抢"。我们只等
+# 它写完,再只读地把新 token 拿回来。输出不解析(TUI 太脆),成败只看凭据是否变了。
+CLAUDE_CLI_TOUCH_TIMEOUT_SEC = 14.0
+CLAUDE_CLI_TOUCH_COOLDOWN_SEC = 300.0        # 成功/无变化后 5 分钟内不再碰
+CLAUDE_CLI_TOUCH_COOLDOWN_LONG_SEC = 3600.0  # 连续多次白跑(链已吊销)→ 1 小时一次
+CLAUDE_CLI_TOUCH_FAILS_BEFORE_LONG = 3
+CLAUDE_CLI_PROBE_DIR = os.path.expanduser("~/Library/Application Support/AIUsageBall/claude-probe")
+_claude_cli_touch_last = 0.0
+_claude_cli_touch_fails = 0
+_claude_cli_touch_note = ""   # 最近一次委托刷新的结果(只记状态,不记值),进 /api/stats
+
+def _find_claude_cli():
+    """GUI app 的 PATH 里通常没有 ~/.local/bin 之类,所以除了 which 再看几个常见位置。"""
+    found = shutil.which("claude")
+    if found:
+        return found
+    home = os.path.expanduser("~")
+    for c in (f"{home}/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+              f"{home}/.claude/local/claude", f"{home}/.npm-global/bin/claude",
+              f"{home}/.volta/bin/claude", f"{home}/.bun/bin/claude"):
+        if os.access(c, os.X_OK):
+            return c
+    return None
+
+def _claude_cli_probe_cleanup():
+    """CLI 每次启动都会在 ~/.claude/projects/<cwd 编码>/ 留一份会话 .jsonl;探针目录
+    的那些纯属噪音,顺手删掉(只删探针目录对应的那一个项目文件夹里的 .jsonl)。"""
+    try:
+        enc = CLAUDE_CLI_PROBE_DIR.replace("/", "-").replace(" ", "-")
+        for f in glob.glob(os.path.expanduser(f"~/.claude/projects/{enc}/*.jsonl")):
+            os.remove(f)
+    except Exception:
+        pass
+
+def _claude_cli_touch(reason):
+    """让 Claude CLI 自己刷新 OAuth token。返回 True 表示凭据确实变了(可以重读)。
+    有冷却:不管成败,CLAUDE_CLI_TOUCH_COOLDOWN_SEC 内只碰一次;连续白跑
+    CLAUDE_CLI_TOUCH_FAILS_BEFORE_LONG 次(refresh_token 已被吊销的典型表现)后退到
+    1 小时一次,免得每分钟拉起一个 node 进程空转。"""
+    global _claude_cli_touch_last, _claude_cli_touch_fails, _claude_cli_touch_note
+    now = time.time()
+    cooldown = (CLAUDE_CLI_TOUCH_COOLDOWN_LONG_SEC
+                if _claude_cli_touch_fails >= CLAUDE_CLI_TOUCH_FAILS_BEFORE_LONG
+                else CLAUDE_CLI_TOUCH_COOLDOWN_SEC)
+    if now - _claude_cli_touch_last < cooldown:
+        return False
+    cli = _find_claude_cli()
+    if not cli:
+        _claude_cli_touch_note = "claude CLI not found"
+        _claude_cli_touch_last = now
+        return False
+    _claude_cli_touch_last = now
+
+    before = _read_oauth_credential()
+    os.makedirs(CLAUDE_CLI_PROBE_DIR, exist_ok=True)
+    env = {k: v for k, v in os.environ.items()
+           if not (k.startswith("CLAUDE") or k.startswith("ANTHROPIC"))}
+    env.update({"TERM": "xterm-256color", "NO_COLOR": "1", "CI": "1"})
+    # 关掉一切副作用:不给工具、不起用户配置里的 MCP server、不开 Remote Control。
+    args = [cli, "/usage",
+            "--allowed-tools", "",
+            "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+            "--settings", '{"remoteControlAtStartup":false}']
+    print(f"Claude CLI touch ({reason}): {' '.join(args[:2])} …")
+    pid = None
+    fd = None
+    try:
+        pid, fd = pty.fork()
+        if pid == 0:  # child
+            try:
+                os.chdir(CLAUDE_CLI_PROBE_DIR)
+                os.execve(cli, args, env)
+            finally:
+                os._exit(127)
+        t0 = time.time()
+        last_enter = t0
+        last_check = t0
+        enters = 0
+        while time.time() - t0 < CLAUDE_CLI_TOUCH_TIMEOUT_SEC:
+            r, _, _ = select.select([fd], [], [], 0.1)
+            if r:
+                try:
+                    d = os.read(fd, 65536)
+                except OSError:
+                    break
+                if not d:
+                    break
+            # 首次运行可能有 trust/telemetry 之类的确认框,隔几秒按一下回车(默认项)带过去
+            if enters < 3 and time.time() - last_enter > 3.0:
+                try:
+                    os.write(fd, b"\r")
+                except OSError:
+                    pass
+                last_enter = time.time()
+                enters += 1
+            # 凭据一变就提前收工(每秒查一次,别把 `security` 当轮询器抽)
+            if enters >= 1 and time.time() - last_check > 1.0:
+                last_check = time.time()
+                if _read_oauth_credential() != before:
+                    break
+    except Exception as e:
+        _claude_cli_touch_note = f"spawn failed: {type(e).__name__}"
+        print(f"Claude CLI touch failed: {e}")
+    finally:
+        if pid:
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    pass
+                time.sleep(0.2)
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except OSError:
+                pass
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        _claude_cli_probe_cleanup()
+
+    after = _read_oauth_credential()
+    changed = bool(after[0]) and after != before
+    if changed and after[1] > time.time():
+        _claude_cli_touch_fails = 0
+        _claude_cli_touch_note = "refreshed by claude CLI"
+        print("Claude CLI touch: credentials refreshed")
+    else:
+        _claude_cli_touch_fails += 1
+        _claude_cli_touch_note = ("claude CLI could not refresh (token revoked? run `claude auth login`)"
+                                  if before[0] else "no claude CLI credentials")
+        print(f"Claude CLI touch: no fresh credentials ({_claude_cli_touch_fails} in a row)")
+    return changed
+
+def _claude_oauth_try(tok):
+    """用现成 token 调 usage 接口。返回 (usage 或 None, http_status 或 None)。"""
+    try:
+        return fetch_claude_usage(tok), 200
+    except urllib.error.HTTPError as e:
+        return None, e.code
+    except Exception:
+        return None, None
 
 def fetch_claude_usage_resilient():
-    """Claude 用量多源:优先浏览器 cookie(永不失效),失败退到现成 OAuth token
-    (只读不刷新,避免和 CLI 抢轮换)。返回 (usage_dict 或 None, 来源字符串)。"""
+    """Claude 用量多源,顺序对标 CodexBar(OAuth → 委托 CLI 刷新 → 浏览器 cookie):
+    1. 现成 OAuth token 没过期 → 直接用(只读)。
+    2. 过期 / 401 → 让 Claude CLI 自己刷一次(pty 跑 `claude /usage`),重读再试。
+    3. 都不行 → 浏览器 claude.ai 的 sessionKey cookie(macOS 27 上要完全磁盘访问权限)。
+    返回 (usage_dict 或 None, 来源字符串)。"""
+    tok, exp = _read_oauth_credential()
+    now = time.time()
+    if tok and exp > now + 30:
+        u, code = _claude_oauth_try(tok)
+        if u:
+            return u, "oauth"
+        if code not in (401, 403):
+            tok = None  # 网络之类的问题,不是 token 的锅,别白白拉起 CLI
+    if tok:
+        # token 过期或被拒 → 委托给 CLI 刷新(有冷却),再只读取一次
+        if _claude_cli_touch("token expired" if exp <= now + 30 else "token rejected"):
+            tok2, _ = _read_oauth_credential()
+            if tok2 and tok2 != tok:
+                u, _ = _claude_oauth_try(tok2)
+                if u:
+                    return u, "oauth·cli"
     u = fetch_claude_usage_via_cookie()
     if u:
         return u, "cookie"
-    tok = _read_oauth_token()
-    if tok:
-        try:
-            return fetch_claude_usage(tok), "oauth"
-        except Exception:
-            pass
     return None, None
 
 def _log_claude(msg, dedup=False):
@@ -387,7 +662,7 @@ async def poll_claude_oauth():
     最初几次失败时快速重试;如果是真的长期拿不到(没登录 claude.ai),连续失败
     次数超过 CLAUDE_FAST_RETRY_MAX 后退回 60s 节奏,避免一直高频重试。"""
     global _claude_last_ok
-    print("Starting Claude usage polling (cookie-first, OAuth fallback)...")
+    print("Starting Claude usage polling (OAuth → CLI-delegated refresh → cookie)...")
     fail_count = 0
     while True:
         try:
@@ -401,7 +676,18 @@ async def poll_claude_oauth():
                     state["claude"]["stale"] = True
                 if fail_count >= 2:
                     state["claude"]["needsLogin"] = True
-                _log_claude("⚠ 取不到用量 — 请在浏览器登录 claude.ai", dedup=True)
+                # Say WHY the cookie path failed. "Log in" is the wrong advice
+                # when the real problem is that the cookie DB couldn't be read.
+                state["claude"]["cookieDiag"] = dict(_claude_cookie_diag)
+                state["claude"]["needsDiskAccess"] = _claude_needs_disk_access
+                if _claude_needs_disk_access:
+                    _log_claude("⚠ 系统不允许读取 Chrome 登录信息 — 请在「系统设置 › 隐私与安全性 › "
+                                "完全磁盘访问权限」里允许 AI Usage Ball", dedup=True)
+                else:
+                    why = _claude_cookie_diag_summary()
+                    _log_claude("⚠ 取不到用量 — 终端跑 `claude auth login`,或在浏览器登录 claude.ai"
+                                + (f" ({why})" if why else ""), dedup=True)
+                state["claude"]["cliRefresh"] = _claude_cli_touch_note
                 fail_count += 1
                 await asyncio.sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
                 continue
@@ -424,6 +710,9 @@ async def poll_claude_oauth():
             state["claude"]["loaded"] = True
             state["claude"]["stale"] = False
             state["claude"]["needsLogin"] = False
+            state["claude"]["needsDiskAccess"] = False
+            state["claude"]["cookieDiag"] = {}
+            state["claude"]["cliRefresh"] = _claude_cli_touch_note
             state["claude"]["tokenExpired"] = False
             state["claude"]["updatedAt"] = datetime.now(timezone.utc).isoformat()
             _log_claude(f"Claude({source}): session {fh_util:.0f}% used, weekly {sd_util:.0f}% used",
@@ -604,11 +893,12 @@ def _ag_iso(rt):
         return datetime.fromtimestamp(float(rt), tz=timezone.utc).isoformat()
     return str(rt)
 
-def _ag_worst(models, keyword):
-    """Lowest remainingFraction (+ its resetTime) among models whose label contains keyword."""
+def _ag_worst(models, keyword, exclude=None):
+    """Lowest remainingFraction (+ its resetTime) among models whose label contains keyword (and not exclude)."""
     best = None
     for m in models:
-        if keyword in (m.get("label") or "").lower():
+        lbl = (m.get("label") or "").lower()
+        if keyword in lbl and (not exclude or exclude not in lbl):
             q = m.get("quotaInfo")
             if not q:
                 continue
@@ -636,17 +926,21 @@ async def poll_antigravity_local():
                 state["antigravity"]["available"] = False
                 state["antigravity"]["status"] = "OFFLINE"
                 state["antigravity"]["status_secondary"] = "OFFLINE"
+                state["antigravity"]["status_tertiary"] = "OFFLINE"
             else:
                 ok = True
                 us = status.get("userStatus") or {}
                 models = ((us.get("cascadeModelConfigData") or {}).get("clientModelConfigs")) or []
-                gemini = _ag_worst(models, "gemini")
+                gemini = _ag_worst(models, "gemini", exclude="gemini 4")
+                gemini4 = _ag_worst(models, "gemini 4")
                 claude = _ag_worst(models, "claude")
                 state["antigravity"]["available"] = True
                 state["antigravity"]["loaded"] = True
 
-                # Third orb: primary ring = "GEMINI REMAINING" (secondary fields),
-                # secondary ring = "CLAUDE REMAINING" (primary fields). See App.jsx.
+                # Third orb:
+                # - outer ring (primary)   = "GEMINI REMAINING"   (secondary fields: Gemini 3.8 Flash)
+                # - middle ring (secondary)= "CLAUDE REMAINING"   (primary fields: Claude)
+                # - inner ring (tertiary)  = "GEMINI 4 REMAINING" (tertiary fields: Gemini 4)
                 if gemini:
                     g_used = max(0.0, (1.0 - float(gemini[0])) * 100.0)
                     state["antigravity"]["rate_limit_pct_secondary"] = g_used
@@ -657,12 +951,19 @@ async def poll_antigravity_local():
                     state["antigravity"]["rate_limit_pct"] = c_used
                     state["antigravity"]["resetsAt"] = _ag_iso(claude[1])
                     state["antigravity"]["status"] = "EXHAUSTED" if c_used >= 100 else "NORMAL"
+                if gemini4:
+                    g4_used = max(0.0, (1.0 - float(gemini4[0])) * 100.0)
+                    state["antigravity"]["rate_limit_pct_tertiary"] = g4_used
+                    state["antigravity"]["resetsAt_tertiary"] = _ag_iso(gemini4[1])
+                    state["antigravity"]["status_tertiary"] = "EXHAUSTED" if g4_used >= 100 else "NORMAL"
 
                 plan = ((us.get("planStatus") or {}).get("planInfo") or {}).get("planName", "")
                 timestamp = time.strftime("%H:%M:%S")
                 gpart = f"Gemini {100 - state['antigravity']['rate_limit_pct_secondary']:.0f}%" if gemini else ""
+                g4part = f"Gemini 4 {100 - state['antigravity']['rate_limit_pct_tertiary']:.0f}%" if gemini4 else ""
                 cpart = f"Claude {100 - state['antigravity']['rate_limit_pct']:.0f}%" if claude else ""
-                msg = f"Antigravity ({plan}): {gpart} {cpart} remaining".strip()
+                parts = " ".join(p for p in (gpart, g4part, cpart) if p)
+                msg = f"Antigravity ({plan}): {parts} remaining".strip()
                 if not state["antigravity"]["logs"] or state["antigravity"]["logs"][0]["msg"] != msg:
                     state["antigravity"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})
                     state["antigravity"]["logs"] = state["antigravity"]["logs"][:30]

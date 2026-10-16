@@ -282,9 +282,19 @@
   color: #ff8c00;
   text-shadow: 0 0 12px rgba(255, 140, 0, 0.6);
   transition: color 0.15s ease;
+  /* The surrounding .orb-timer-wrapper is pointer-events:none so clicks fall
+     through to the orb. This one element must catch them, or SIGN IN is
+     just decoration — which is exactly what it was until this line. */
+  pointer-events: auto;
 }
 .orb-timer.orb-login-hint:hover {
   color: #ffab40;
+}
+/* "GRANT ACCESS" is nearly twice the width of "SIGN IN" — shrink it so it
+   stays inside the 160px widget orb instead of running past the glass. */
+.orb-timer.orb-login-hint.long {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
 }
 
 .orb-glass:hover {
@@ -458,6 +468,23 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   font-weight: 700;
   letter-spacing: 0.05em;
   margin-top: 4px;
+}
+
+.orb-timer-tertiary {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+.orb-timer-wrapper.has-tertiary .orb-timer {
+  font-size: 1.32rem;
+}
+
+.orb-timer-wrapper.has-tertiary .orb-timer-secondary {
+  font-size: 0.68rem;
+  margin-top: 2px;
 }
 
 /* Glass Specular Reflection */
