@@ -11,7 +11,7 @@ const TRIAL_DAYS = 30;
 // 双价:试用期内带折扣码 A$5.99,到期原价 A$9.99。
 // ⚠️ 这些是 Lemon Squeezy 测试模式(Test mode)的值 —— 店铺审核通过、切到 Live mode、
 // 产品 Copy to Live Mode 后,checkout 链接/两个 ID/折扣码都会变成全新的,到时候要整套换掉。
-const LS_BUY = 'https://aiusageball.lemonsqueezy.com/checkout/buy/746df40e-c7a7-4fda-9481-d98cfdf39e8e';
+const LS_BUY = 'https://aiusageball.lemonsqueezy.com/checkout/buy/c152b748-ebf0-45fc-8525-0df9afd9bc85';
 const CHECKOUT_TRIAL = `${LS_BUY}?checkout[discount_code]=TRIAL`; // 试用期内 A$5.99(TRIAL 折扣码)
 const CHECKOUT_FULL  = LS_BUY;                                     // 到期原价 A$9.99
 const LS_PRODUCT_IDS = [1185289, 1853633]; // product_id / variant_id —— 验证 license 确属本产品
