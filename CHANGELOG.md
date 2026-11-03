@@ -2,6 +2,14 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.7] — 2026-11-04
+
+### Added
+- **Antigravity Gemini 4 Gauge**: Dedicated third concentric inner gauge ring, live remaining percentage, and independent reset countdown for Gemini 4 inside the Antigravity orb.
+
+### Fixed
+- **Weekly Quota Gating & Display**: When weekly quota is exhausted (for Codex and Claude), the primary five-hour window is now properly treated as depleted. Fixed an issue where the orb would show `READY TO GO` / 100% full even though the weekly ceiling was at 0%. It now displays `WAIT RESET`, drains the liquid, and highlights the weekly reset countdown so users are never misled into thinking quota is available.
+
 ## [0.3.5] — 2026-10-16
 
 ### Added
