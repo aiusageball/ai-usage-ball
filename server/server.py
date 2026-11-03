@@ -700,7 +700,7 @@ async def poll_claude_oauth():
             # Primary ring = 5-hour session window; secondary = 7-day weekly.
             state["claude"]["rate_limit_pct"] = fh_util
             state["claude"]["resetsAt"] = fh.get("resets_at", "") or ""
-            state["claude"]["status"] = "EXHAUSTED" if fh_util >= 100 else "NORMAL"
+            state["claude"]["status"] = "EXHAUSTED" if (fh_util >= 100 or sd_util >= 100) else "NORMAL"
             state["claude"]["rate_limit_pct_secondary"] = sd_util
             state["claude"]["resetsAt_secondary"] = sd.get("resets_at", "") or ""
             state["claude"]["status_secondary"] = "EXHAUSTED" if sd_util >= 100 else "NORMAL"
@@ -791,12 +791,12 @@ async def poll_codex_oauth():
                     datetime.fromtimestamp(reset_at_secondary, tz=timezone.utc).isoformat()
                     if reset_at_secondary else ""
                 )
-                state["codex"]["status"] = "EXHAUSTED" if pri_used >= 100 else "NORMAL"
+                state["codex"]["status"] = "EXHAUSTED" if (pri_used >= 100 or sec_used >= 100) else "NORMAL"
                 state["codex"]["status_secondary"] = "EXHAUSTED" if sec_used >= 100 else "NORMAL"
 
                 timestamp = time.strftime("%H:%M:%S")
                 plan = usage.get("plan_type", "")
-                primary_summary = f"{pri_used:.0f}% used" if primary_window_started else "ready"
+                primary_summary = "weekly exhausted" if sec_used >= 100 else (f"{pri_used:.0f}% used" if primary_window_started else "ready")
                 msg = f"ChatGPT/Codex: 5h {primary_summary}, weekly {sec_used:.0f}% used (plan: {plan})"
                 if not state["codex"]["logs"] or state["codex"]["logs"][0]["msg"] != msg:
                     state["codex"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})

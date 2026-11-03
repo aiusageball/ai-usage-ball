@@ -31,10 +31,21 @@ const formatCountdownHMS = (resetsAtIso) => {
   }
 };
 
+const formatClaudePrimaryCountdown = (claude) => {
+  if (claude?.rate_limit_pct_secondary >= 100 || claude?.status_secondary === "EXHAUSTED") {
+    return "WAIT RESET";
+  }
+  return formatCountdownHMS(claude?.resetsAt);
+};
+
 // A fresh Codex five-hour window has no countdown until the first request is
 // made. The backend marks that state explicitly because the API still returns
 // a rolling reset_at timestamp while the window is idle.
+// When weekly quota is exhausted, the 5-hour window is unusable until weekly reset.
 const formatCodexPrimaryCountdown = (codex) => {
+  if (codex?.rate_limit_pct_secondary >= 100 || codex?.status_secondary === "EXHAUSTED") {
+    return "WAIT RESET";
+  }
   if (codex?.primary_window_started === false) return "READY TO GO";
   return formatCountdownHMS(codex?.resetsAt);
 };
@@ -51,11 +62,11 @@ const ORB_CONFIG = {
     secondaryLabel: 'WEEKLY REMAINING',
     stackLabels: true,
     getData: (d) => ({
-      percentage: 100 - d.claude.rate_limit_pct,
+      percentage: (d.claude.rate_limit_pct_secondary >= 100 || d.claude.status_secondary === "EXHAUSTED") ? 0 : (100 - d.claude.rate_limit_pct),
       secondaryPercentage: 100 - d.claude.rate_limit_pct_secondary,
     }),
     getTimers: (d) => ({
-      timer: formatCountdownHMS(d.claude.resetsAt),
+      timer: formatClaudePrimaryCountdown(d.claude),
       secondaryTimer: formatCountdownHMS(d.claude.resetsAt_secondary),
     }),
   },
@@ -69,7 +80,7 @@ const ORB_CONFIG = {
     secondaryLabel: 'WEEKLY REMAINING',
     stackLabels: true,
     getData: (d) => ({
-      percentage: 100 - d.codex.rate_limit_pct,
+      percentage: (d.codex.rate_limit_pct_secondary >= 100 || d.codex.status_secondary === "EXHAUSTED") ? 0 : (100 - d.codex.rate_limit_pct),
       secondaryPercentage: 100 - d.codex.rate_limit_pct_secondary,
     }),
     getTimers: (d) => ({
@@ -115,15 +126,19 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   const hasSecondary = secondaryPercentage !== undefined;
   const hasTertiary = tertiaryPercentage !== undefined;
 
+  const isWeeklySecondary = secondaryLabel === "WEEKLY REMAINING";
+  const rawPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
+  const isWeeklyExhausted = hasSecondary && isWeeklySecondary && rawPctSec <= 0;
+
   const radius = hasTertiary ? 70 : 65;
   const strokeW = hasTertiary ? 7 : 8;
   const circumference = 2 * Math.PI * radius;
-  const validPct = Math.max(0, Math.min(100, percentage));
+  const validPct = isWeeklyExhausted ? 0 : Math.max(0, Math.min(100, percentage));
 
   const radiusSec = hasTertiary ? 56 : 47;
   const strokeWSec = hasTertiary ? 5.5 : 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
-  const validPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
+  const validPctSec = rawPctSec;
 
   const radiusTer = 43;
   const strokeWTer = 4.5;
@@ -132,7 +147,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
 
   // 弹出 widget 时如果还没拿到真实数据(percentage 默认按 100% 算),环先保持
   // "空"而不是显示成满环再猛地跳到真实值——跟主界面同一个道理(见 App.jsx)。
-  const ringPct = dataLoaded ? validPct : 0;
+  const ringPct = (dataLoaded && !isWeeklyExhausted) ? validPct : 0;
   const ringPctSec = dataLoaded ? validPctSec : 0;
   const ringPctTer = dataLoaded ? validPctTer : 0;
   const strokeDashoffset = circumference - (circumference * ringPct) / 100;
@@ -292,7 +307,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
     return () => clearInterval(id);
   }, []);
 
-  const isExhausted = validPct <= 0;
+  const isExhausted = validPct <= 0 || isWeeklyExhausted;
 
   return (
     <div className="orb-wrapper" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
@@ -340,9 +355,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 }, 3000);
               }}
               style={{
-                transform: `scale(${Math.max(0.01, validPct / 100)})`,
+                transform: `scale(${Math.max(0.01, (isWeeklyExhausted ? 0 : validPct) / 100)})`,
                 transformOrigin: 'center center',
-                opacity: Math.min(1, validPct / 8),
+                opacity: Math.min(1, (isWeeklyExhausted ? 0 : validPct) / 8),
                 filter: videoFilter
               }}
             />
@@ -417,7 +432,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               title={authFix.title}
             >{authFix.hint}</span>
           ) : (
-            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
+            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
           )}
           {authFix ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>

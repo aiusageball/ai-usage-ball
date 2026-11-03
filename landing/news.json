@@ -1,6 +1,20 @@
 {
-  "updated": "2026-07-27",
+  "updated": "2026-11-04",
   "items": [
+    {
+      "date": "2026-11-03",
+      "tag": "general",
+      "title": "Google brings Gemini 4 to Antigravity with dedicated model quota",
+      "summary": "Google rolled out Gemini 4 to Antigravity with a separate usage quota and reset window, expanding multi-model options alongside Gemini 3.8 and Claude.",
+      "url": "https://aiusageball.com/changelog"
+    },
+    {
+      "date": "2026-11-01",
+      "tag": "claude",
+      "title": "Anthropic renames tiers to Max and Ultra, drops 5-hour limit for Ultra",
+      "summary": "Anthropic restructured high-tier Claude subscriptions: Max 5x is now Max, and Max 20x is now Ultra ($200/mo) with the 5-hour rolling session cap removed for verified accounts while keeping the 10x weekly limit.",
+      "url": "https://aiusageball.com/changelog"
+    },
     {
       "date": "2026-07-27",
       "tag": "general",

@@ -143,10 +143,21 @@ const formatCountdownHMS = (resetsAtIso) => {
   }
 };
 
+const formatClaudePrimaryCountdown = (claude) => {
+  if (claude?.rate_limit_pct_secondary >= 100 || claude?.status_secondary === "EXHAUSTED") {
+    return "WAIT RESET";
+  }
+  return formatCountdownHMS(claude?.resetsAt);
+};
+
 // A fresh Codex five-hour window has no countdown until the first request is
 // made. The backend marks that state explicitly because the API still returns
 // a rolling reset_at timestamp while the window is idle.
+// When weekly quota is exhausted, the 5-hour window is unusable until weekly reset.
 const formatCodexPrimaryCountdown = (codex) => {
+  if (codex?.rate_limit_pct_secondary >= 100 || codex?.status_secondary === "EXHAUSTED") {
+    return "WAIT RESET";
+  }
   if (codex?.primary_window_started === false) return "READY TO GO";
   return formatCountdownHMS(codex?.resetsAt);
 };
@@ -542,19 +553,23 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   const hasSecondary = secondaryPercentage !== undefined;
   const hasTertiary = tertiaryPercentage !== undefined;
 
+  const isWeeklySecondary = secondaryLabel === "WEEKLY REMAINING";
+  const rawPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
+  const isWeeklyExhausted = hasSecondary && isWeeklySecondary && rawPctSec <= 0;
+
   // When a third inner ring is present (Antigravity: Gemini 3.8 + Claude + Gemini 4),
   // slightly expand the outer ring and tighten spacing so all three concentric
   // rings sit cleanly around the countdown readout without crowding it.
   const radius = hasTertiary ? 70 : 65;
   const strokeW = hasTertiary ? 7 : 8;
   const circumference = 2 * Math.PI * radius;
-  const validPct = Math.max(0, Math.min(100, percentage));
+  const validPct = isWeeklyExhausted ? 0 : Math.max(0, Math.min(100, percentage));
   const strokeDashoffset = circumference - (circumference * validPct) / 100;
 
   const radiusSec = hasTertiary ? 56 : 47;
   const strokeWSec = hasTertiary ? 5.5 : 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
-  const validPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
+  const validPctSec = rawPctSec;
   const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * validPctSec) / 100;
 
   const radiusTer = 43;
@@ -730,7 +745,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
     return () => { if (introRafRef.current) cancelAnimationFrame(introRafRef.current); };
   }, [introDone]);
 
-  const liquidPct = !introDone ? introPct : (dataLoaded ? validPct : 100);
+  const liquidPct = isWeeklyExhausted ? 0 : (!introDone ? introPct : (dataLoaded ? validPct : 100));
   // 倒计时文字(READY/真实时间)要等两件事都发生才露出来:轮到这个球的开场
   // 顺位、且真实数据已经到手。哪怕数据来得比顺位早,也照样按 introOrder 依次
   // 露出来,不会三个一起"啪"地弹出——避免中途先闪一下 READY 占位字样。
@@ -740,14 +755,14 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   // stroke-dashoffset 的 1s CSS transition 会让它从"满"猛地转一大圈扫到真实
   // 百分比,看起来像开场转了一圈。改成数据到手前就是空环,数据一到才从空转
   // 到真实值,方向和液体的"从空到满"一致,也不会有那种突兀的满环写扫。
-  const ringPct = revealed ? validPct : 0;
+  const ringPct = (revealed && !isWeeklyExhausted) ? validPct : 0;
   const ringPctSec = revealed ? validPctSec : 0;
   const ringPctTer = revealed ? validPctTer : 0;
   const displayStrokeDashoffset = circumference - (circumference * ringPct) / 100;
   const displayStrokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
   const displayStrokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
 
-  const isExhausted = validPct <= 0;
+  const isExhausted = validPct <= 0 || isWeeklyExhausted;
 
   return (
     <div className="orb-wrapper orb-intro-appear" style={{ animationDelay: `${introDelay}ms` }} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
@@ -898,7 +913,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               title={authFix.title}
             >{authFix.hint}</span>
           ) : (
-          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{timer}</span>
+          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
           )}
           {authFix ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
@@ -1394,7 +1409,7 @@ function App() {
     const timer = setInterval(() => {
       const d = dataRef.current;
       setTimers({
-        claude: formatCountdownHMS(d.claude.resetsAt),
+        claude: formatClaudePrimaryCountdown(d.claude),
         claude_secondary: formatCountdownHMS(d.claude.resetsAt_secondary),
         codex: formatCodexPrimaryCountdown(d.codex),
         codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary),
@@ -1494,7 +1509,7 @@ function App() {
             videoFilter="none"
             timer={timers.claude} 
             secondaryTimer={timers.claude_secondary}
-            percentage={100 - data.claude.rate_limit_pct} 
+            percentage={(data.claude.rate_limit_pct_secondary >= 100 || data.claude.status_secondary === "EXHAUSTED") ? 0 : (100 - data.claude.rate_limit_pct)} 
             secondaryPercentage={100 - data.claude.rate_limit_pct_secondary}
             label="CLAUDE" 
             primaryLabel="CLAUDE REMAINING"
@@ -1525,7 +1540,7 @@ function App() {
             videoFilter="hue-rotate(320deg) saturate(2) brightness(1.2)"
             timer={timers.codex} 
             secondaryTimer={timers.codex_secondary}
-            percentage={100 - data.codex.rate_limit_pct} 
+            percentage={(data.codex.rate_limit_pct_secondary >= 100 || data.codex.status_secondary === "EXHAUSTED") ? 0 : (100 - data.codex.rate_limit_pct)} 
             secondaryPercentage={100 - data.codex.rate_limit_pct_secondary}
             label="CODEX" 
             primaryLabel="CODEX REMAINING"
