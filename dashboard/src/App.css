@@ -531,6 +531,17 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   letter-spacing: 0.05em;
 }
 
+.orb-indicator-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  transform: translateY(-0.5px);
+  flex-shrink: 0;
+}
+
 .orb-usage-lines {
   display: flex;
   justify-content: center;

@@ -956,11 +956,11 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
           <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
-            <p className="orb-subtitle">{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
+            <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
+            <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: secondaryColor, boxShadow: `0 0 6px ${secondaryColor}` }} />{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
             {hasTertiary && (
-              <p className="orb-subtitle">{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
+              <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: tertiaryColor || '#c084fc', boxShadow: `0 0 6px ${tertiaryColor || '#c084fc'}` }} />{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
             )}
-            <p className="orb-subtitle">{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </div>
         ) : (
