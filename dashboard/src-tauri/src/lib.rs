@@ -325,6 +325,15 @@ pub fn run() {
             // relying on ExitRequested alone left zombie backends holding
             // the dynamically selected backend port.
             match event {
+                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                    if !has_visible_windows {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     if let Some(state) = app_handle.try_state::<BackendProcess>() {
                         kill_backend(&state);
