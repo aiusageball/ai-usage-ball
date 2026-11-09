@@ -81,11 +81,12 @@ export const PHYS = {
   RACE_LANE_SLIDE: 16,   // 换道时的插值速度系数(越大切换越快)
 };
 
-// 三种颜色(与主界面的三颗水晶球对应)
+// 水晶球颜色(与主界面的水晶球对应)
 const ORB_COLORS = [
   { id: 'claude',      hex: '#ff8c00', hue: '0deg',   sat: '1.0', bri: '1.0' },
   { id: 'codex',       hex: '#ef4444', hue: '320deg', sat: '2.0', bri: '1.2' },
   { id: 'antigravity', hex: '#06b6d4', hue: '185deg', sat: '1.8', bri: '1.2' },
+  { id: 'grok',        hex: '#e2e8f0', hue: '0deg',   sat: '0.0', bri: '1.3' },
 ];
 
 // ── 上下文 ──────────────────────────────────────────────────────────

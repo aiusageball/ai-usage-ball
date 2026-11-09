@@ -110,10 +110,26 @@ const ORB_CONFIG = {
       tertiaryTimer: formatCountdownHMS(d.antigravity.resetsAt_tertiary),
     }),
   },
+  grok: {
+    color: '#e2e8f0',
+    secondaryColor: '#94a3b8',
+    glowColor: 'rgba(226, 232, 240, 0.4)',
+    videoFilter: 'grayscale(1) brightness(1.25) contrast(1.1)',
+    label: 'GROK',
+    primaryLabel: 'GROK REMAINING',
+    secondaryLabel: 'GROK BOT',
+    getData: (d) => ({
+      percentage: (d.grok?.status === "EXHAUSTED") ? 0 : (100 - (d.grok?.rate_limit_pct || 0)),
+      secondaryLabel: d.grok?.plan ? `${d.grok.plan.toUpperCase()} PLAN` : 'GROK BOT',
+    }),
+    getTimers: (d) => ({
+      timer: formatCountdownHMS(d.grok?.resetsAt),
+    }),
+  },
 };
 
 /* ── DualRingOrb (self-contained copy for widget isolation) ── */
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, offline = false, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, offline = false, appName = null, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null }) => {
   // Which "fix it" prompt replaces the countdown, if any. Disk access wins
   // over login: when macOS refuses to open Chrome's cookie DB, logging in
   // can't help, so telling the user to do it is actively wrong. (Mirrors
@@ -147,9 +163,10 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
 
   // 弹出 widget 时如果还没拿到真实数据(percentage 默认按 100% 算),环先保持
   // "空"而不是显示成满环再猛地跳到真实值——跟主界面同一个道理(见 App.jsx)。
-  const ringPct = (dataLoaded && !isWeeklyExhausted) ? validPct : 0;
-  const ringPctSec = dataLoaded ? validPctSec : 0;
-  const ringPctTer = dataLoaded ? validPctTer : 0;
+  // Offline = no trustworthy reading: keep rings empty rather than showing the last value as live.
+  const ringPct = (dataLoaded && !offline && !isWeeklyExhausted) ? validPct : 0;
+  const ringPctSec = (dataLoaded && !offline) ? validPctSec : 0;
+  const ringPctTer = (dataLoaded && !offline) ? validPctTer : 0;
   const strokeDashoffset = circumference - (circumference * ringPct) / 100;
   const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
   const strokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
@@ -355,7 +372,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 }, 3000);
               }}
               style={{
-                transform: `scale(${Math.max(0.01, (isWeeklyExhausted ? 0 : validPct) / 100)})`,
+                transform: `scale(${Math.max(0.01, ((isWeeklyExhausted || offline) ? 0 : validPct) / 100)})`,
                 transformOrigin: 'center center',
                 opacity: Math.min(1, (isWeeklyExhausted ? 0 : validPct) / 8),
                 filter: videoFilter
@@ -432,9 +449,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               title={authFix.title}
             >{authFix.hint}</span>
           ) : (
-            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
+            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{offline ? "--:--:--" : isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
           )}
-          {authFix ? null : secondaryTimer ? (
+          {authFix || offline ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
           ) : null}
           {authFix ? null : tertiaryTimer ? (
@@ -459,7 +476,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             title={authFix.title}
           >{authFix.cta}</p>
         ) : offline ? (
-          <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
+          <p className="orb-subtitle orb-offline">{appName ? `OFFLINE · OPEN ${appName.toUpperCase()}` : 'OFFLINE'}</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
@@ -472,6 +489,8 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
         ) : (
           <>
             <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
+            {/* Single-ring orbs (Grok) still show their plan line, without a fake second ring. */}
+            {secondaryLabel && <p className="orb-subtitle orb-plan-label">{secondaryLabel}</p>}
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </>
         )}
@@ -479,6 +498,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
     </div>
   );
 };
+
+// Desktop app each orb opens (matches open_provider_app in src-tauri/src/lib.rs).
+const APP_NAMES = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', grok: 'Grok Bot' };
 
 /* ── Widget App ── */
 function WidgetApp() {
@@ -491,6 +513,7 @@ function WidgetApp() {
     antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, rate_limit_pct_tertiary: 0, resetsAt: '', resetsAt_secondary: '', resetsAt_tertiary: '' },
     claude: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
     codex: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '', primary_window_started: false },
+    grok: { loaded: false, rate_limit_pct: 0, resetsAt: '', status: 'NORMAL' },
   });
   const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00', tertiaryTimer: undefined });
   const [backendUrl, setBackendUrl] = useState(null);
@@ -630,13 +653,14 @@ function WidgetApp() {
         tertiaryPercentage={orbData.tertiaryPercentage}
         label={config.label}
         primaryLabel={config.primaryLabel}
-        secondaryLabel={config.secondaryLabel}
+        secondaryLabel={orbData.secondaryLabel ?? config.secondaryLabel}
         tertiaryLabel={config.tertiaryLabel}
         stackLabels={config.stackLabels}
         connected={true}
-        dataLoaded={!!data[orbType].loaded}
+        dataLoaded={!!data[orbType]?.loaded}
         resetCredits={orbType === 'codex' && data.codex ? data.codex.reset_credits : null}
-        offline={orbType === 'antigravity' && data.antigravity && data.antigravity.available === false}
+        offline={!!data[orbType] && data[orbType].available === false}
+        appName={APP_NAMES[orbType]}
         // Both Claude sources dead (browser cookie gone + read-only OAuth token
         // expired). `stale` gates the mid-session case so a transient blip
         // doesn't flash SIGN IN; `!loaded` covers cold start where `stale`

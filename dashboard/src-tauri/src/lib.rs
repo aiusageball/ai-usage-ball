@@ -78,6 +78,7 @@ fn open_provider_app(provider: String) -> Result<(), String> {
         "claude" => "Claude",
         "codex" => "Codex",
         "antigravity" => "Antigravity",
+        "grok" => "Grok Bot",
         other => return Err(format!("unknown provider: {other}")),
     };
     Command::new("open")

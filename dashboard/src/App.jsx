@@ -73,10 +73,24 @@ const launchWidget = async (orbName) => {
   // its neighbor (e.g. Codex, sandwiched in the middle, could swallow clicks
   // aimed at Claude/Antigravity in the overlap band).
   const vSpacing = 280;
-  const screenW = window.screen.availWidth || window.screen.width || 3440;
-  const idx = Math.max(0, ['claude', 'codex', 'antigravity'].indexOf(orbName));
-  const x = Math.max(0, screenW - widgetW - rightInset);
-  const y = topMargin + idx * vSpacing;
+  const scr = window.screen;
+  const screenW = scr.availWidth || scr.width || 3440;
+  const screenH = scr.availHeight || scr.height || 1080;
+  // availLeft/availTop (WebKit) = work-area origin below the menu bar.
+  const availLeft = Number.isFinite(scr.availLeft) ? scr.availLeft : 0;
+  const availTop = Number.isFinite(scr.availTop) ? scr.availTop : 0;
+  const idx = Math.max(0, ['claude', 'codex', 'antigravity', 'grok'].indexOf(orbName));
+  // Short screens: wrap into another column to the left instead of stacking
+  // past the bottom edge (4 × 280 needs ~1140pt; laptops have ~900-1000).
+  const rowsPerCol = Math.max(1, Math.floor((screenH - topMargin - widgetH) / vSpacing) + 1);
+  const col = Math.floor(idx / rowsPerCol);
+  const row = idx % rowsPerCol;
+  const colGap = 16;
+  const x = Math.max(availLeft, availLeft + screenW - widgetW - rightInset - col * (widgetW + colGap));
+  const y = Math.min(
+    availTop + topMargin + row * vSpacing,
+    Math.max(availTop, availTop + screenH - widgetH),
+  );
 
   // Create new transparent widget window
   const ww = new WebviewWindow(label, {
@@ -541,7 +555,7 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, backendUrl = null }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, appName = null, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, backendUrl = null }) => {
   // Which "fix it" prompt to show in place of the countdown, if any. Disk
   // access wins over login: when macOS refuses to open Chrome's cookie DB,
   // logging in can't help, so telling the user to do it is actively wrong.
@@ -745,7 +759,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
     return () => { if (introRafRef.current) cancelAnimationFrame(introRafRef.current); };
   }, [introDone]);
 
-  const liquidPct = isWeeklyExhausted ? 0 : (!introDone ? introPct : (dataLoaded ? validPct : 100));
+  const liquidPct = (isWeeklyExhausted || (offline && introDone)) ? 0 : (!introDone ? introPct : (dataLoaded ? validPct : 100));
   // 倒计时文字(READY/真实时间)要等两件事都发生才露出来:轮到这个球的开场
   // 顺位、且真实数据已经到手。哪怕数据来得比顺位早,也照样按 introOrder 依次
   // 露出来,不会三个一起"啪"地弹出——避免中途先闪一下 READY 占位字样。
@@ -755,9 +769,10 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   // stroke-dashoffset 的 1s CSS transition 会让它从"满"猛地转一大圈扫到真实
   // 百分比,看起来像开场转了一圈。改成数据到手前就是空环,数据一到才从空转
   // 到真实值,方向和液体的"从空到满"一致,也不会有那种突兀的满环写扫。
-  const ringPct = (revealed && !isWeeklyExhausted) ? validPct : 0;
-  const ringPctSec = revealed ? validPctSec : 0;
-  const ringPctTer = revealed ? validPctTer : 0;
+  // Offline = no trustworthy reading: keep rings empty rather than showing the last value as live.
+  const ringPct = (revealed && !offline && !isWeeklyExhausted) ? validPct : 0;
+  const ringPctSec = (revealed && !offline) ? validPctSec : 0;
+  const ringPctTer = (revealed && !offline) ? validPctTer : 0;
   const displayStrokeDashoffset = circumference - (circumference * ringPct) / 100;
   const displayStrokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
   const displayStrokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
@@ -913,9 +928,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               title={authFix.title}
             >{authFix.hint}</span>
           ) : (
-          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
+          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{offline ? "--:--:--" : isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
           )}
-          {authFix ? null : secondaryTimer ? (
+          {authFix || offline ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
           ) : null}
           {authFix ? null : tertiaryTimer ? (
@@ -953,7 +968,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             title={authFix.title}
           >{authFix.cta}</p>
         ) : offline ? (
-          <p className="orb-subtitle orb-offline">OFFLINE · OPEN ANTIGRAVITY</p>
+          <p className="orb-subtitle orb-offline">{appName ? `OFFLINE · OPEN ${appName.toUpperCase()}` : 'OFFLINE'}</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
@@ -966,6 +981,8 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
         ) : (
           <>
             <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
+            {/* Single-ring orbs (Grok) still show their plan line, without a fake second ring. */}
+            {secondaryLabel && <p className="orb-subtitle orb-plan-label">{secondaryLabel}</p>}
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
           </>
         )}
@@ -1019,6 +1036,14 @@ function App() {
       resetsAt_secondary: "",
       primary_window_started: false,
       reset_credits: null
+    },
+    grok: {
+      provider: "Grok",
+      loaded: false,
+      rate_limit_pct: 0.0,
+      status: "NORMAL",
+      resetsAt: "",
+      plan: ""
     }
   });
   // Persistent Settings State
@@ -1319,13 +1344,14 @@ function App() {
     codex_secondary: "00:00:00",
     antigravity: "00:00:00",
     antigravity_claude: "00:00:00",
-    antigravity_gemini4: "00:00:00"
+    antigravity_gemini4: "00:00:00",
+    grok: "00:00:00"
   });
   
   const [currentTime, setCurrentTime] = useState("");
 
   // ── Ambient random pulse: occasionally one orb flows by itself ──
-  const orbNames = ['claude', 'codex', 'antigravity'];
+  const orbNames = ['claude', 'codex', 'antigravity', 'grok'];
   const [ambientOrb, setAmbientOrb] = useState(null);
 
   useEffect(() => {
@@ -1415,7 +1441,8 @@ function App() {
         codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary),
         antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary),
         antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt),
-        antigravity_gemini4: formatCountdownHMS(d.antigravity.resetsAt_tertiary)
+        antigravity_gemini4: formatCountdownHMS(d.antigravity.resetsAt_tertiary),
+        grok: formatCountdownHMS(d.grok?.resetsAt)
       });
 
       const date = new Date();
@@ -1577,9 +1604,31 @@ function App() {
             dataLoaded={!!data.antigravity.loaded}
             introOrder={2}
             offline={data.antigravity.available === false}
+            appName="Antigravity"
             ambientPulse={ambientOrb === 'antigravity'}
             backendUrl={backendUrl}
             onPopOut={() => { launchWidget('antigravity'); setHasPoppedOutWidget(true); }}
+          />
+
+          {/* Orb 4: Grok (Monochrome Silver/Cool Slate) */}
+          <DualRingOrb 
+            color="#e2e8f0" 
+            secondaryColor="#94a3b8" 
+            glowColor="rgba(226, 232, 240, 0.4)" 
+            videoFilter="grayscale(1) brightness(1.25) contrast(1.1)"
+            timer={timers.grok} 
+            percentage={data.grok?.status === "EXHAUSTED" ? 0 : (100 - (data.grok?.rate_limit_pct || 0))} 
+            label="GROK" 
+            primaryLabel="GROK REMAINING"
+            secondaryLabel={data.grok?.plan ? `${data.grok.plan.toUpperCase()} PLAN` : "GROK BOT"}
+            connected={connected}
+            dataLoaded={!!data.grok?.loaded}
+            introOrder={3}
+            offline={data.grok?.available === false}
+            appName="Grok Bot"
+            ambientPulse={ambientOrb === 'grok'}
+            backendUrl={backendUrl}
+            onPopOut={() => { launchWidget('grok'); setHasPoppedOutWidget(true); }}
           />
 
         </main>
@@ -1608,6 +1657,7 @@ function App() {
                   {chip('claude')}
                   {chip('codex')}
                   {chip('antigravity')}
+                  {chip('grok')}
                 </div>
                 <button className="team-row-remove" onClick={() => unpinTeamPeer(pinned.instance_id)} title="Remove">×</button>
               </div>

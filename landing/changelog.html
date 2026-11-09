@@ -57,6 +57,31 @@
 
   <div class="version">
     <div class="version-header">
+      <span class="version-num">v0.3.8</span>
+      <span class="version-date">November 9, 2026</span>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag added">Added</span></div>
+      <ul>
+        <li><strong>Grok Bot Orb</strong>: A fourth crystal ball that reads your weekly Grok Bot usage from the local Grok Bot app cache, with remaining percentage, plan name, and reset countdown. It can also be popped out as a desktop widget, and double-clicking it opens Grok Bot.</li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag fixed">Fixed</span></div>
+      <ul>
+        <li><strong>Offline Labels</strong>: Offline orbs no longer say <code>OPEN ANTIGRAVITY</code> for every provider; each one names its own app (for example <code>OFFLINE · OPEN GROK BOT</code>).</li>
+        <li><strong>Offline Widgets</strong>: Desktop widgets for any orb whose source is unavailable (including Grok) now show an offline state with empty rings and liquid, instead of the last live percentage.</li>
+        <li><strong>Plan Label on Single-Ring Orbs</strong>: Orbs with a single gauge now show their plan under the percentage (for example <code>SUPER PLAN</code>).</li>
+        <li><strong>Stale Grok Usage</strong>: A missing, unreadable, expired, or previous-window Grok usage cache now shows as offline instead of a full 100% quota, and no longer flickers between the old value and 100% after the weekly reset.</li>
+        <li><strong>Widget Placement on Smaller Displays</strong>: Popped-out widgets now stay inside the visible screen area; on shorter displays the fourth widget wraps into a second column instead of opening off-screen.</li>
+        <li><strong>Dock Icon Reopens the Dashboard</strong>: Clicking the Dock or app icon now restores the main window after it was closed.</li>
+        <li><strong>Orb Subtitles</strong>: Subtitle lines now follow the same order as the rings and timers, with matching colored indicator dots.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="version">
+    <div class="version-header">
       <span class="version-num">v0.3.7</span>
       <span class="version-date">November 4, 2026</span>
     </div>

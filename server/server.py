@@ -11,6 +11,8 @@ import signal
 import select
 import pty
 import glob
+import base64
+import math
 import urllib.request
 import urllib.error
 from contextlib import asynccontextmanager
@@ -88,6 +90,7 @@ async def lifespan(app: FastAPI):
     claude_task = asyncio.create_task(poll_claude_oauth())
     codex_task = asyncio.create_task(poll_codex_oauth())
     antigravity_task = asyncio.create_task(poll_antigravity_local())
+    grok_task = asyncio.create_task(poll_grok_bot())
     tick_task = asyncio.create_task(background_ticker())
     team_task = asyncio.create_task(browse_team_peers())
     try:
@@ -96,6 +99,7 @@ async def lifespan(app: FastAPI):
         claude_task.cancel()
         codex_task.cancel()
         antigravity_task.cancel()
+        grok_task.cancel()
         tick_task.cancel()
         team_task.cancel()
         _team_unregister_sync()
@@ -177,6 +181,17 @@ state = {
         "primary_window_started": False,
         "reset_credits": None,
         "logs": []
+    },
+    "grok": {
+        "provider": "Grok",
+        "available": None,   # None = 尚未探测; 探测后置 True/False
+        "loaded": False,      # 第一次拿到真实数据后置 True
+        "rate_limit_pct": 0.0,
+        "status": "NORMAL",
+        "reset_time": "",
+        "resetsAt": "",
+        "plan": "",
+        "logs": []
     }
 }
 
@@ -245,6 +260,13 @@ def clamp_expired_windows():
         co["rate_limit_pct_secondary"] = 0.0
         co["status_secondary"] = "NORMAL"
         co["resetsAt_secondary"] = ""
+
+    # Grok: a passed reset means the cached reading belongs to an old window.
+    # Do NOT zero it (that showed a fake 100% remaining and flickered against
+    # the 5s poller reloading the old cache) — mark it stale/unavailable instead.
+    g = state.get("grok")
+    if g and _iso_in_past(g.get("resetsAt", "")):
+        _grok_mark_unavailable("STALE")
 
 # ── Claude: real usage via claude.ai cookie (primary) / OAuth token (read-only fallback) ──
 CLAUDE_CREDS_FILE = os.path.expanduser("~/.claude/.credentials.json")
@@ -973,6 +995,126 @@ async def poll_antigravity_local():
         fail_count = 0 if ok else fail_count + 1
         await asyncio.sleep(20.0 if (ok or fail_count > ANTIGRAVITY_FAST_RETRY_MAX) else 3.0)
 
+# ── Grok: real usage via Grok Bot local persistence (sand-client-persistence) ──
+GROK_PERSISTENCE_DIR = os.path.expanduser("~/Library/Application Support/Grok Bot/sand-client-persistence")
+# A weekly reading older than this can't describe the current window, even if
+# its own reset/expiry fields are missing or odd.
+GROK_MAX_READING_AGE_MS = 8 * 24 * 3600 * 1000
+
+def _grok_finite_number(value):
+    """Return value as float if it is a real finite number (not bool/str/NaN), else None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    f = float(value)
+    return f if math.isfinite(f) else None
+
+def _grok_mark_unavailable(status):
+    """Grok has no trustworthy current reading: show the offline UI, never a fake 100%."""
+    g = state["grok"]
+    g["available"] = False
+    g["loaded"] = True          # probed; lets the orb finish its intro and show OFFLINE
+    g["rate_limit_pct"] = None  # unknown — NOT 0% used
+    g["status"] = status        # "OFFLINE" (no cache / unreadable) or "STALE" (old window)
+    g["resetsAt"] = ""
+
+def read_grok_bot_usage():
+    """Reads the latest Grok Bot weekly-usage cache from sand-client-persistence.
+
+    Returns None when no cache exists, otherwise a dict:
+      {"ok": True, "pct", "next_reset_ms", "plan"}  — trustworthy current reading
+      {"ok": False, "status": "STALE"|"OFFLINE"}     — cache exists but can't be trusted
+    """
+    if not os.path.isdir(GROK_PERSISTENCE_DIR):
+        return None
+    latest = None
+    latest_ts = -1.0
+    found_cache = False
+    try:
+        entries = os.listdir(GROK_PERSISTENCE_DIR)
+    except Exception:
+        return None
+    for f in entries:
+        if not f.endswith(".blob"):
+            continue
+        raw = f[:-5].upper()
+        pad = "=" * ((-len(raw)) % 8)
+        try:
+            dec = base64.b32decode(raw + pad).decode("utf-8", "ignore")
+        except Exception:
+            continue
+        if not dec.endswith(".weekly-usage.cache"):
+            continue
+        found_cache = True
+        p = os.path.join(GROK_PERSISTENCE_DIR, f)
+        try:
+            with open(p, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            value = data.get("value") or {}
+            reading = value.get("reading") or {}
+            read_at = _grok_finite_number(reading.get("readAtMs"))
+            if read_at is None:
+                read_at = os.path.getmtime(p) * 1000
+            if read_at >= latest_ts:
+                latest_ts = read_at
+                latest = (value, reading, read_at)
+        except Exception:
+            continue
+    if latest is None:
+        return {"ok": False, "status": "OFFLINE"} if found_cache else None
+
+    value, reading, read_at = latest
+    now_ms = time.time() * 1000
+    usage = reading.get("usage")
+    if not isinstance(usage, dict):
+        return {"ok": False, "status": "OFFLINE"}
+    pct = _grok_finite_number(usage.get("percentUsed"))
+    if pct is None:
+        return {"ok": False, "status": "OFFLINE"}
+    expires_at = _grok_finite_number(value.get("expiresAtMs"))
+    if expires_at is not None and now_ms >= expires_at:
+        return {"ok": False, "status": "STALE"}
+    next_reset = _grok_finite_number(usage.get("nextResetMs"))
+    if next_reset is not None and now_ms >= next_reset:
+        return {"ok": False, "status": "STALE"}   # reading is from a window that already reset
+    if now_ms - read_at > GROK_MAX_READING_AGE_MS:
+        return {"ok": False, "status": "STALE"}
+    plan = usage.get("unifiedPlanName") or usage.get("grokPlanLabel") or "Grok"
+    return {"ok": True, "pct": max(0.0, pct), "next_reset_ms": next_reset, "plan": str(plan)}
+
+async def poll_grok_bot():
+    print("Starting Grok Bot usage polling (sand-client-persistence)...")
+    while True:
+        try:
+            result = await asyncio.to_thread(read_grok_bot_usage)
+            if result is None:
+                _grok_mark_unavailable("OFFLINE")
+            elif not result["ok"]:
+                _grok_mark_unavailable(result["status"])
+            else:
+                pct = result["pct"]
+                next_reset_ms = result["next_reset_ms"]
+                resets_at = (
+                    datetime.fromtimestamp(next_reset_ms / 1000, tz=timezone.utc).isoformat(timespec="seconds")
+                    if next_reset_ms else ""
+                )
+                plan = result["plan"]
+                state["grok"]["available"] = True
+                state["grok"]["loaded"] = True
+                state["grok"]["rate_limit_pct"] = pct
+                state["grok"]["resetsAt"] = resets_at
+                state["grok"]["plan"] = plan
+                state["grok"]["status"] = "EXHAUSTED" if pct >= 100 else "NORMAL"
+
+                timestamp = time.strftime("%H:%M:%S")
+                msg = f"Grok Bot: {pct:.1f}% used (plan: {plan})"
+                if not state["grok"]["logs"] or state["grok"]["logs"][0]["msg"] != msg:
+                    state["grok"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})
+                    state["grok"]["logs"] = state["grok"]["logs"][:30]
+        except Exception as e:
+            print(f"Grok polling error: {e}")
+            _grok_mark_unavailable("OFFLINE")   # never turn a failed parse into 100% remaining
+        await asyncio.sleep(5.0)
+
 # ── Team View: LAN-only peer discovery (opt-in, no cloud) ──
 # Lets 2-3 teammates on the same local network see each other's remaining %
 # during a pairing session. Fully separate from the Watch's zeroconf service
@@ -1006,6 +1148,9 @@ def _team_status_payload():
     codex_remaining = _remaining(state["codex"]["rate_limit_pct"])
     # Antigravity's primary orb ring is Gemini, stored in the secondary field — see App.jsx.
     antigravity_remaining = _remaining(state["antigravity"]["rate_limit_pct_secondary"])
+    grok_state = state.get("grok", {})
+    grok_known = grok_state.get("available") is True and grok_state.get("rate_limit_pct") is not None
+    grok_remaining = _remaining(grok_state.get("rate_limit_pct")) if grok_known else None
 
     return {
         "display_name": team_settings["display_name"] or "Teammate",
@@ -1014,6 +1159,8 @@ def _team_status_payload():
             "claude": {"remaining_pct": claude_remaining, "critical": claude_remaining < TEAM_CRITICAL_PCT},
             "codex": {"remaining_pct": codex_remaining, "critical": codex_remaining < TEAM_CRITICAL_PCT},
             "antigravity": {"remaining_pct": antigravity_remaining, "critical": antigravity_remaining < TEAM_CRITICAL_PCT},
+            # None = Grok offline/stale: teammates see "···" instead of a fake 100%.
+            "grok": {"remaining_pct": grok_remaining, "critical": grok_remaining < TEAM_CRITICAL_PCT} if grok_known else None,
         },
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }

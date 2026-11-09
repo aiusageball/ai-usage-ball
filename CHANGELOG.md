@@ -2,6 +2,20 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.8] — 2026-11-09
+
+### Added
+- **Grok Bot Orb**: A fourth crystal ball that reads your weekly Grok Bot usage from the local Grok Bot app cache, with remaining percentage, plan name, and reset countdown. It can also be popped out as a desktop widget, and double-clicking it opens Grok Bot.
+
+### Fixed
+- **Offline Labels**: Offline orbs no longer say `OPEN ANTIGRAVITY` for every provider; each one names its own app (for example `OFFLINE · OPEN GROK BOT`).
+- **Offline Widgets**: Desktop widgets for any orb whose source is unavailable (including Grok) now show an offline state with empty rings and liquid, instead of the last live percentage.
+- **Plan Label on Single-Ring Orbs**: Orbs with a single gauge now show their plan under the percentage (for example `SUPER PLAN`).
+- **Stale Grok Usage**: A missing, unreadable, expired, or previous-window Grok usage cache now shows as offline instead of a full 100% quota, and no longer flickers between the old value and 100% after the weekly reset.
+- **Widget Placement on Smaller Displays**: Popped-out widgets now stay inside the visible screen area; on shorter displays the fourth widget wraps into a second column instead of opening off-screen.
+- **Dock Icon Reopens the Dashboard**: Clicking the Dock or app icon now restores the main window after it was closed.
+- **Orb Subtitles**: Subtitle lines now follow the same order as the rings and timers, with matching colored indicator dots.
+
 ## [0.3.7] — 2026-11-04
 
 ### Added

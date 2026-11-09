@@ -199,10 +199,10 @@
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
   /* 顶部留更多空间,把球往下推到窗口的视觉中心(原 1.5rem 时球明显偏上) */
-  padding: 4rem 1.5rem 1rem;
+  padding: 4rem 1.25rem 1rem;
   flex: 1;
 }
 
@@ -263,6 +263,13 @@
 .orb-subtitle.orb-offline {
   color: rgba(255, 255, 255, 0.6);
   letter-spacing: 0.12em;
+}
+
+/* Plan line under a single-ring orb (e.g. Grok "SUPER PLAN") */
+.orb-subtitle.orb-plan-label {
+  color: rgba(255, 255, 255, 0.32);
+  letter-spacing: 0.12em;
+  margin-top: 2px;
 }
 
 /* Claude 未登录:可点击的登录提示(球内 SIGN IN 和标签下的 CTA) */
@@ -692,6 +699,7 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
 .team-chip-claude { color: #ff8c00; }
 .team-chip-codex { color: #ef4444; }
 .team-chip-antigravity { color: var(--color-antigravity); }
+.team-chip-grok { color: #e2e8f0; }
 
 .team-chip.critical {
   background: rgba(239, 68, 68, 0.18);
