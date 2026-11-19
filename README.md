@@ -7,8 +7,10 @@ glance.
 
 ![AI Usage Ball — three liquid orbs showing Claude, Codex, and Antigravity usage remaining](docs/screenshot.png)
 
-<video src="liquid-loop.mp4" autoplay loop muted playsinline width="720" title="Liquid orbs looping for Claude, Codex, and Antigravity quota">
+<video src="docs/demo.mp4" autoplay loop muted playsinline width="720" title="Demo: orbs for Claude, Codex, Antigravity and Grok Bot drain and reset, then pop out as a desktop widget">
 </video>
+
+<sub>Demo uses sample data and a time-lapse; the window-to-desktop fly-out is a demo effect.</sub>
 
 **Try the signed, notarized build (Apple Silicon, macOS 12+):** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
 or [see the website](https://aiusageball.com) for details. Or with Homebrew:
