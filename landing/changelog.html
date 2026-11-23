@@ -57,6 +57,39 @@
 
   <div class="version">
     <div class="version-header">
+      <span class="version-num">v0.3.9</span>
+      <span class="version-date">November 23, 2026</span>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag added">Added</span></div>
+      <ul>
+        <li><strong>Antigravity 2.34+ Support (<code>agy</code> CLI Fallback)</strong>: Automatically falls back to the official <code>agy -p /usage --output-format json</code> CLI when newer Antigravity builds no longer expose <code>--csrf_token</code> in process arguments, restoring live Gemini, Claude, and Gemini 4 quota rings and reset countdowns.</li>
+        <li><strong>Data Source Modes, Custom Labels &amp; Bilingual UI</strong>: Added Demo Mode and Manual Credentials configuration in Settings → Data Source, custom orb titles in Settings → Appearance, and English / Simplified Chinese (<code>简体中文</code>) language switching.</li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag changed">Changed</span></div>
+      <ul>
+        <li><strong>Lower Idle CPU &amp; Power Usage</strong>: Replaced the main dashboard's continuous <code>requestAnimationFrame</code> video-seeking loop with native playback and demand-driven easing timers across both the dashboard and floating desktop widgets, so idle orbs consume near-zero JS CPU.</li>
+        <li><strong>Lightweight Change-Only SSE Stream</strong>: Stripped internal diagnostic logs from <code>/api/stream</code> and switched to push-on-change updates with 15-second keepalive heartbeats.</li>
+        <li><strong>Smarter Background Polling</strong>: Suspended desktop hover-dwell cursor polling when no widgets are open, and switched Team View peer checks to concurrent requests with stale-peer cleanup.</li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-label"><span class="tag fixed">Fixed</span></div>
+      <ul>
+        <li><strong>Antigravity Offline State &amp; Team View</strong>: Hidden stale purple Gemini 4 timers and leftover video dots when Antigravity is offline, added expired-window clamping for Antigravity, and stopped broadcasting a false <code>100%</code> to Team View peers while offline.</li>
+        <li><strong>Retina Widget Hover Detection</strong>: Converted physical window bounds to logical points using <code>scale_factor</code> so 2-second hover dwell aligns accurately on Retina displays.</li>
+        <li><strong>Manual Credentials Settings</strong>: Fixed HTTP 422 errors when saving numeric port/percentage fields, restored <code>(Configured)</code> status badges, and allowed clearing saved values.</li>
+        <li><strong>Local Network Security</strong>: Restricted Team View control endpoints to localhost and ensured diagnostic logs are redacted on LAN responses.</li>
+        <li><strong>Apple Watch Companion</strong>: Fixed missing liquid frame animations after orb label updates and added offline display handling for Antigravity.</li>
+        <li><strong>Updater &amp; Reliability</strong>: Rebuilt and signed the auto-updater <code>.app.tar.gz</code> from the notarized <code>.app</code>, fixed stale backend cleanup on launch, declared <code>_aipulseteam._tcp</code> in <code>Info.plist</code>, fixed HTTP suffix/out-of-range video requests, and fixed easter-egg window reset width (<code>1000px</code>) and mid-drag <code>Esc</code> exit.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="version">
+    <div class="version-header">
       <span class="version-num">v0.3.8</span>
       <span class="version-date">November 9, 2026</span>
     </div>

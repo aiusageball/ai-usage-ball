@@ -52,10 +52,11 @@ APP_VERSION="$(node -p "require('$SRC_TAURI/tauri.conf.json').version")"
 echo "==> 1/6 Rebuilding the PyInstaller onedir backend sidecar"
 SERVER_DIR="$REPO_ROOT/server"
 DIST_DIR="$HOME/Library/Application Support/AIPulse/dist"
+PYINSTALLER="${PYINSTALLER:-$(command -v pyinstaller || echo "$HOME/Library/Application Support/AIPulse/venv/bin/pyinstaller")}"
 (
   cd "$SERVER_DIR"
   rm -rf "$DIST_DIR/aipulse-server" "$DIST_DIR/build"
-  pyinstaller --onedir --name aipulse-server \
+  "$PYINSTALLER" --onedir --name aipulse-server \
     --distpath "$DIST_DIR" --workpath "$DIST_DIR/build" \
     --collect-all uvicorn --collect-all fastapi --collect-all zeroconf \
     --collect-all browser_cookie3 --collect-all anyio \
@@ -127,8 +128,11 @@ codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 rm -f "$STABLE_DMG"
 cp "$DMG" "$STABLE_DMG"
 
-echo "==> Generating latest.json (updater manifest)"
+echo "==> Generating updater tarball + latest.json from fixed+notarized .app"
 TARBALL="$SRC_TAURI/target/release/bundle/macos/AI Usage Ball.app.tar.gz"
+rm -f "$TARBALL" "$TARBALL.sig"
+tar -czf "$TARBALL" -C "$(dirname "$APP")" "$(basename "$APP")"
+(cd "$DASHBOARD" && env -u TAURI_SIGNING_PRIVATE_KEY npx tauri signer sign -f "$TAURI_SIGNING_PRIVATE_KEY" "$TARBALL")
 SIGNATURE="$(cat "$TARBALL.sig")"
 PUB_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 LATEST_JSON="$SRC_TAURI/target/release/bundle/latest.json"
@@ -152,8 +156,8 @@ echo "  Website DMG: $STABLE_DMG"
 echo "  Updater tgz: $TARBALL"
 echo "  Manifest:    $LATEST_JSON"
 echo ""
-echo "To ship the update, upload ALL THREE to the GitHub release (renaming the tarball to match the URL above, spaces -> dots):"
-echo "  gh release upload v$APP_VERSION \"$STABLE_DMG\" \"$TARBALL#AI.Usage.Ball.app.tar.gz\" \"$LATEST_JSON\" --clobber"
+echo "To ship the update, upload ALL FOUR to the GitHub release (renaming the tarball/dmg to match URLs):"
+echo "  gh release upload v$APP_VERSION \"$STABLE_DMG#AI-Usage-Ball.dmg\" \"$STABLE_DMG#AI-Usage-Ball-site.dmg\" \"$TARBALL#AI.Usage.Ball.app.tar.gz\" \"$LATEST_JSON\" --clobber"
 echo ""
 echo "Verify the public download before announcing the release:"
 echo "  scripts/verify_public_release.sh"

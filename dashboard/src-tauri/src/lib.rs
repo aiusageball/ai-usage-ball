@@ -1,9 +1,14 @@
 use std::net::TcpListener;
+#[cfg(not(feature = "mas"))]
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
+
+fn is_mas_build() -> bool {
+    cfg!(feature = "mas") || std::env::var("AIPULSE_MAS").as_deref() == Ok("1")
+}
 
 /// Holds the spawned Python backend so it can be killed when the app exits.
 struct BackendProcess(Mutex<Option<Child>>);
@@ -41,6 +46,9 @@ fn get_backend_url(state: tauri::State<'_, BackendPort>) -> String {
 /// scheme isn't in the plugin's URL scope.)
 #[tauri::command]
 fn open_full_disk_access_settings() -> Result<(), String> {
+    if is_mas_build() {
+        return Ok(());
+    }
     Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
         .spawn()
@@ -57,11 +65,13 @@ fn open_full_disk_access_settings() -> Result<(), String> {
 fn kill_backend(state: &BackendProcess) {
     if let Ok(mut guard) = state.0.lock() {
         if let Some(child) = guard.as_mut() {
-            let pid = child.id();
-            // Negative pid = kill the entire process group.
-            let _ = Command::new("kill")
-                .args(["-9", &format!("-{pid}")])
-                .status();
+            if !is_mas_build() {
+                let pid = child.id();
+                // Negative pid = kill the entire process group.
+                let _ = Command::new("kill")
+                    .args(["-9", &format!("-{pid}")])
+                    .status();
+            }
             let _ = child.kill(); // fallback + reaps the direct child
             let _ = child.wait();
         }
@@ -74,6 +84,9 @@ fn kill_backend(state: &BackendProcess) {
 /// arbitrary applications.
 #[tauri::command]
 fn open_provider_app(provider: String) -> Result<(), String> {
+    if is_mas_build() {
+        return Ok(());
+    }
     let app = match provider.as_str() {
         "claude" => "Claude",
         "codex" => "Codex",
@@ -95,6 +108,9 @@ fn open_provider_app(provider: String) -> Result<(), String> {
 /// if the item doesn't exist.
 #[tauri::command]
 fn secure_get(key: String) -> Option<String> {
+    if is_mas_build() {
+        return None;
+    }
     let out = Command::new("security")
         .args(["find-generic-password", "-s", "AIUsageBall", "-a", &key, "-w"])
         .output()
@@ -110,6 +126,9 @@ fn secure_get(key: String) -> Option<String> {
 /// already exists (-U).
 #[tauri::command]
 fn secure_set(key: String, value: String) -> Result<(), String> {
+    if is_mas_build() {
+        return Ok(());
+    }
     let status = Command::new("security")
         .args(["add-generic-password", "-U", "-s", "AIUsageBall", "-a", &key, "-w", &value])
         .status()
@@ -131,13 +150,14 @@ fn secure_set(key: String, value: String) -> Result<(), String> {
 ///     that set this up), overridable via AIPULSE_PYTHON / AIPULSE_SERVER.
 ///  3. The repo's server/venv (running from a source checkout).
 fn spawn_backend(app: &tauri::App, port: u16) -> Option<Child> {
+    let mas = is_mas_build();
     // Sweep up any backend left over from a previous run (crash, or an older
-    // version that didn't group-kill). A stale instance can keep its selected
-    // port bound, which would silently prevent this launch's backend from
-    // starting and leave the orbs frozen on old data.
-    let _ = Command::new("pkill")
-        .args(["-f", "aipulse-server/aipulse-server"])
-        .status();
+    // version that didn't group-kill). Skipped in sandboxed MAS builds.
+    if !mas {
+        let _ = Command::new("pkill")
+            .args(["-f", "Contents/Resources/backend/aipulse-server"])
+            .status();
+    }
 
     let quiet = |mut cmd: Command| {
         // Discard stdout/stderr — an inherited, unread pipe can fill up and
@@ -145,10 +165,12 @@ fn spawn_backend(app: &tauri::App, port: u16) -> Option<Child> {
         // process_group(0): run the backend in its own process group (pgid =
         // child pid) so kill_backend can take out the whole tree with one
         // group-kill (the server may itself spawn helper subprocesses).
-        cmd.stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .process_group(0)
-            .spawn()
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        #[cfg(not(feature = "mas"))]
+        if !mas {
+            cmd.process_group(0);
+        }
+        cmd.spawn()
     };
 
     // 1) Bundled sidecar resource: Contents/Resources/aipulse-server/aipulse-server.
@@ -157,6 +179,9 @@ fn spawn_backend(app: &tauri::App, port: u16) -> Option<Child> {
         if sidecar.exists() {
             let mut cmd = Command::new(&sidecar);
             cmd.env("AIPULSE_PORT", port.to_string());
+            if mas {
+                cmd.env("AIPULSE_MAS", "1");
+            }
             match quiet(cmd) {
                 Ok(child) => {
                     println!("Started bundled AI Usage Ball backend (pid {})", child.id());
@@ -192,6 +217,9 @@ fn spawn_backend(app: &tauri::App, port: u16) -> Option<Child> {
 
     let mut cmd = Command::new(&python);
     cmd.arg(&server).env("AIPULSE_PORT", port.to_string());
+    if mas {
+        cmd.env("AIPULSE_MAS", "1");
+    }
     match quiet(cmd) {
         Ok(child) => {
             println!("Started AI Usage Ball backend from venv (pid {})", child.id());
@@ -226,33 +254,46 @@ fn spawn_widget_hover_poller(app: tauri::AppHandle) {
 
     const DWELL: Duration = Duration::from_millis(2000);
     const POLL_INTERVAL: Duration = Duration::from_millis(120);
+    const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
     std::thread::spawn(move || {
         // label -> (entered_at, dwell_fired)
         let mut state: HashMap<String, (Instant, bool)> = HashMap::new();
         loop {
-            std::thread::sleep(POLL_INTERVAL);
-
-            let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) else { continue };
-            let Ok(event) = CGEvent::new(source) else { continue };
-            let cursor = event.location(); // top-left origin, matches window position space
-
             let widgets: Vec<(String, tauri::WebviewWindow)> = app
                 .webview_windows()
                 .into_iter()
                 .filter(|(label, _)| label.starts_with("widget-"))
                 .collect();
 
+            if widgets.is_empty() {
+                state.clear();
+                std::thread::sleep(IDLE_POLL_INTERVAL);
+                continue;
+            }
+
+            std::thread::sleep(POLL_INTERVAL);
+
+            let Ok(source) = CGEventSource::new(CGEventSourceStateID::CombinedSessionState) else { continue };
+            let Ok(event) = CGEvent::new(source) else { continue };
+            let cursor = event.location(); // top-left origin in logical points
+
             let active_labels: std::collections::HashSet<String> =
                 widgets.iter().map(|(l, _)| l.clone()).collect();
             state.retain(|label, _| active_labels.contains(label));
 
             for (label, window) in widgets {
-                let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else { continue };
-                let inside = cursor.x >= pos.x as f64
-                    && cursor.x <= (pos.x + size.width as i32) as f64
-                    && cursor.y >= pos.y as f64
-                    && cursor.y <= (pos.y + size.height as i32) as f64;
+                let (Ok(pos), Ok(size), Ok(scale)) = (
+                    window.outer_position(),
+                    window.outer_size(),
+                    window.scale_factor(),
+                ) else { continue };
+                let scale = if scale > 0.0 { scale } else { 1.0 };
+                let x0 = pos.x as f64 / scale;
+                let y0 = pos.y as f64 / scale;
+                let x1 = x0 + size.width as f64 / scale;
+                let y1 = y0 + size.height as f64 / scale;
+                let inside = cursor.x >= x0 && cursor.x <= x1 && cursor.y >= y0 && cursor.y <= y1;
 
                 let entry = state.entry(label.clone());
                 match (inside, entry) {
@@ -285,10 +326,12 @@ fn spawn_widget_hover_poller(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+    #[cfg(not(feature = "mas"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

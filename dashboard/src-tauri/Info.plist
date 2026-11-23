@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AI Usage Ball 需要访问本地局域网以同步 Apple Watch 伴侣应用及展示局域网团队视图。 / AI Usage Ball needs local network access to sync with your Apple Watch companion and display Team View on your LAN.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_aipulse._tcp</string>
+		<string>_aipulseteam._tcp</string>
+	</array>
+</dict>
+</plist>

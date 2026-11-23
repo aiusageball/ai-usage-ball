@@ -13,6 +13,8 @@ import pty
 import glob
 import base64
 import math
+import tempfile
+import threading
 import urllib.request
 import urllib.error
 from contextlib import asynccontextmanager
@@ -28,6 +30,77 @@ from pydantic import BaseModel
 # packaged. The environment override remains useful for local development and
 # for running two instances to simulate Team View.
 SERVER_PORT = int(os.environ.get("AIPULSE_PORT", "8000"))
+
+# MAS_MODE is set when launched from the Mac App Store sandboxed build.
+# It permanently disables local cookie/Keychain/process/app-support scanning.
+MAS_MODE = os.environ.get("AIPULSE_MAS") == "1"
+
+CONFIG_DIR = os.path.expanduser("~/Library/Application Support/AIUsageBall")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
+_DEFAULT_APP_CONFIG = {
+    "data_mode": "demo" if MAS_MODE else "auto",
+    "claude_token": "",
+    "claude_session_key": "",
+    "codex_token": "",
+    "codex_account_id": "",
+    "antigravity_port": "",
+    "antigravity_csrf": "",
+    "grok_manual_pct": "",
+}
+
+def load_app_config() -> dict:
+    cfg = dict(_DEFAULT_APP_CONFIG)
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                for k in _DEFAULT_APP_CONFIG:
+                    if k in loaded and loaded[k] is not None:
+                        cfg[k] = str(loaded[k])
+    except Exception as e:
+        print(f"Warning: failed to load config.json: {e}")
+    if cfg.get("data_mode") not in ("demo", "manual", "auto"):
+        cfg["data_mode"] = "demo" if MAS_MODE else "auto"
+    if MAS_MODE and cfg.get("data_mode") == "auto":
+        cfg["data_mode"] = "demo"
+    return cfg
+
+def save_app_config(cfg: dict) -> None:
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    tmp_path = CONFIG_FILE + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    try:
+        os.chmod(tmp_path, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp_path, CONFIG_FILE)
+
+app_config = load_app_config()
+_config_waiters: list[asyncio.Event] = []
+
+def effective_data_mode() -> str:
+    mode = app_config.get("data_mode") or ("demo" if MAS_MODE else "auto")
+    if MAS_MODE and mode == "auto":
+        return "demo"
+    return mode
+
+def _notify_config_changed() -> None:
+    for ev in list(_config_waiters):
+        ev.set()
+
+async def _wait_config_or_sleep(seconds: float) -> None:
+    ev = asyncio.Event()
+    _config_waiters.append(ev)
+    try:
+        await asyncio.wait_for(ev.wait(), timeout=seconds)
+    except asyncio.TimeoutError:
+        pass
+    finally:
+        if ev in _config_waiters:
+            _config_waiters.remove(ev)
 
 
 @asynccontextmanager
@@ -84,9 +157,10 @@ async def lifespan(app: FastAPI):
             print(f"Team View Zeroconf init skipped ({e}); LAN discovery disabled")
             _team_zc = None
 
-    # Real-data pollers: Claude usage via Anthropic OAuth (direct, no CodexBar);
-    # Codex/Antigravity still via CodexBar CLI for now.
-    # All three providers now read real data natively (no CodexBar dependency).
+    if effective_data_mode() == "demo":
+        apply_demo_state(force_reset_timers=True)
+
+    # Real-data pollers (mode-aware for Demo / Manual / Auto local readers)
     claude_task = asyncio.create_task(poll_claude_oauth())
     codex_task = asyncio.create_task(poll_codex_oauth())
     antigravity_task = asyncio.create_task(poll_antigravity_local())
@@ -135,6 +209,7 @@ state = {
         "provider": "Antigravity",
         "available": None,   # None = 尚未探测(前端不显示灰);探测后置 True/False
         "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
+        "needsSetup": False,
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "rate_limit_pct_tertiary": 0.0,
@@ -152,6 +227,7 @@ state = {
     "claude": {
         "provider": "Claude",
         "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
+        "needsSetup": False,
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
@@ -170,6 +246,7 @@ state = {
     "codex": {
         "provider": "Codex",
         "loaded": False,      # 第一次拿到真实数据后置 True(供前端开场动效判断)
+        "needsSetup": False,
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
         "status": "NORMAL",
@@ -186,6 +263,7 @@ state = {
         "provider": "Grok",
         "available": None,   # None = 尚未探测; 探测后置 True/False
         "loaded": False,      # 第一次拿到真实数据后置 True
+        "needsSetup": False,
         "rate_limit_pct": 0.0,
         "status": "NORMAL",
         "reset_time": "",
@@ -194,6 +272,63 @@ state = {
         "logs": []
     }
 }
+
+def apply_demo_state(force_reset_timers: bool = False) -> None:
+    """Populate realistic sample quota and live reset countdowns for Demo Mode."""
+    now = datetime.now(timezone.utc)
+    def future(seconds: int, current_iso: str) -> str:
+        if not force_reset_timers and current_iso and not _iso_in_past(current_iso):
+            return current_iso
+        return (now + timedelta(seconds=seconds)).isoformat()
+
+    c = state["claude"]
+    c["loaded"] = True
+    c["stale"] = False
+    c["needsLogin"] = False
+    c["needsDiskAccess"] = False
+    c["needsSetup"] = False
+    c["rate_limit_pct"] = 24.0
+    c["rate_limit_pct_secondary"] = 18.0
+    c["status"] = "NORMAL"
+    c["status_secondary"] = "NORMAL"
+    c["resetsAt"] = future(2 * 3600 + 47 * 60 + 15, c.get("resetsAt", ""))
+    c["resetsAt_secondary"] = future(4 * 86400 + 11 * 3600, c.get("resetsAt_secondary", ""))
+    c["updatedAt"] = now.isoformat()
+
+    co = state["codex"]
+    co["loaded"] = True
+    co["needsSetup"] = False
+    co["rate_limit_pct"] = 32.0
+    co["rate_limit_pct_secondary"] = 12.0
+    co["status"] = "NORMAL"
+    co["status_secondary"] = "NORMAL"
+    co["primary_window_started"] = True
+    co["reset_credits"] = 2
+    co["resetsAt"] = future(3 * 3600 + 18 * 60 + 40, co.get("resetsAt", ""))
+    co["resetsAt_secondary"] = future(5 * 86400 + 6 * 3600, co.get("resetsAt_secondary", ""))
+
+    ag = state["antigravity"]
+    ag["available"] = True
+    ag["loaded"] = True
+    ag["needsSetup"] = False
+    ag["rate_limit_pct_secondary"] = 15.0
+    ag["rate_limit_pct"] = 28.0
+    ag["rate_limit_pct_tertiary"] = 8.0
+    ag["status"] = "NORMAL"
+    ag["status_secondary"] = "NORMAL"
+    ag["status_tertiary"] = "NORMAL"
+    ag["resetsAt_secondary"] = future(1 * 3600 + 52 * 60 + 10, ag.get("resetsAt_secondary", ""))
+    ag["resetsAt"] = future(4 * 3600 + 5 * 60 + 30, ag.get("resetsAt", ""))
+    ag["resetsAt_tertiary"] = future(2 * 3600 + 15 * 60, ag.get("resetsAt_tertiary", ""))
+
+    g = state["grok"]
+    g["available"] = True
+    g["loaded"] = True
+    g["needsSetup"] = False
+    g["rate_limit_pct"] = 19.0
+    g["status"] = "NORMAL"
+    g["plan"] = "PRO"
+    g["resetsAt"] = future(6 * 3600 + 24 * 60 + 50, g.get("resetsAt", ""))
 
 def safe_pct(value) -> float:
     """Coerce a usedPercent value to float, treating None/invalid as 0."""
@@ -239,6 +374,10 @@ def clamp_expired_windows():
     treat the window as reset (0% used) until the next successful poll repopulates
     real numbers. Also flips the `stale` flag when polling has been failing.
     """
+    if effective_data_mode() == "demo":
+        apply_demo_state()
+        return
+
     c = state["claude"]
     if _iso_in_past(c.get("resetsAt", "")):
         c["rate_limit_pct"] = 0.0
@@ -260,6 +399,21 @@ def clamp_expired_windows():
         co["rate_limit_pct_secondary"] = 0.0
         co["status_secondary"] = "NORMAL"
         co["resetsAt_secondary"] = ""
+
+    ag = state.get("antigravity")
+    if ag and ag.get("available") is True:
+        if _iso_in_past(ag.get("resetsAt", "")):
+            ag["rate_limit_pct"] = 0.0
+            ag["status"] = "NORMAL"
+            ag["resetsAt"] = ""
+        if _iso_in_past(ag.get("resetsAt_secondary", "")):
+            ag["rate_limit_pct_secondary"] = 0.0
+            ag["status_secondary"] = "NORMAL"
+            ag["resetsAt_secondary"] = ""
+        if _iso_in_past(ag.get("resetsAt_tertiary", "")):
+            ag["rate_limit_pct_tertiary"] = 0.0
+            ag["status_tertiary"] = "NORMAL"
+            ag["resetsAt_tertiary"] = ""
 
     # Grok: a passed reset means the cached reading belongs to an old window.
     # Do NOT zero it (that showed a fake 100% remaining and flickered against
@@ -589,7 +743,7 @@ def _claude_cli_touch(reason):
                 last_enter = time.time()
                 enters += 1
             # 凭据一变就提前收工(每秒查一次,别把 `security` 当轮询器抽)
-            if enters >= 1 and time.time() - last_check > 1.0:
+            if time.time() - last_check > 1.0:
                 last_check = time.time()
                 if _read_oauth_credential() != before:
                     break
@@ -598,16 +752,24 @@ def _claude_cli_touch(reason):
         print(f"Claude CLI touch failed: {e}")
     finally:
         if pid:
-            for sig in (signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.kill(pid, sig)
-                except OSError:
-                    pass
-                time.sleep(0.2)
             try:
-                os.waitpid(pid, os.WNOHANG)
+                os.kill(pid, signal.SIGTERM)
             except OSError:
                 pass
+            time.sleep(0.2)
+            try:
+                wpid, _ = os.waitpid(pid, os.WNOHANG)
+            except OSError:
+                wpid = pid
+            if wpid == 0:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+                try:
+                    os.waitpid(pid, 0)
+                except OSError:
+                    pass
         if fd is not None:
             try:
                 os.close(fd)
@@ -675,44 +837,76 @@ def _log_claude(msg, dedup=False):
 # 和 Claude CLI 抢刷新会触发服务端把整条链吊销(access+refresh 全废)。刷新只归 CLI 管;
 # 本服务对 OAuth token 只读。曾经犯过这个错,别再犯。
 
+def fetch_claude_usage_via_manual(token: str = "", session_key: str = ""):
+    """Manual credentials path for MAS / manual mode (no local disk/cookie/Keychain snooping)."""
+    tok = (token or "").strip()
+    if tok:
+        u, _ = _claude_oauth_try(tok)
+        if u:
+            return u, "manual-oauth"
+    sk = (session_key or "").strip()
+    if sk:
+        headers = {"Cookie": f"sessionKey={sk}", "User-Agent": _CLAUDE_WEB_UA}
+        def _get(url):
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode())
+        try:
+            orgs = _get("https://claude.ai/api/organizations")
+            if orgs and isinstance(orgs, list):
+                org_id = orgs[0]["uuid"]
+                return _get(f"https://claude.ai/api/organizations/{org_id}/usage"), "manual-cookie"
+        except Exception:
+            pass
+    return None, None
+
 async def poll_claude_oauth():
-    """Claude 用量轮询:cookie 为主源(对标 CodexBar,永不失效),OAuth token 只读兜底。
-    不再自己刷新 OAuth token —— 那会和 Claude CLI 抢一次性轮换的 refresh_token、触发服务端
-    把整条链吊销(之前 token 反复失效就是这么来的)。刷新交还给 CLI;cookie 不受影响。
-    失败重试用短间隔(而不是跟成功一样的 60s)—— 冷启动时第一次读经常因为浏览器/
-    钥匙串还没就绪而失败,如果失败也等 60s,首次显示真实数据就要接近一分钟。只在
-    最初几次失败时快速重试;如果是真的长期拿不到(没登录 claude.ai),连续失败
-    次数超过 CLAUDE_FAST_RETRY_MAX 后退回 60s 节奏,避免一直高频重试。"""
+    """Claude 用量轮询:支持 Demo / Manual Credentials / Auto Local Reader。"""
     global _claude_last_ok
-    print("Starting Claude usage polling (OAuth → CLI-delegated refresh → cookie)...")
+    print("Starting Claude usage polling...")
     fail_count = 0
     while True:
         try:
-            usage, source = await asyncio.to_thread(fetch_claude_usage_resilient)
-            if not usage:
-                # cookie + OAuth 都拿不到(浏览器没登录 claude.ai 且 token 也失效)。
-                # 置 needsLogin,前端 Claude 球据此显示"登录 claude.ai"的可点提示,
-                # 而不是干等一个永远不来的数字。只有连续多次失败才置(避免冷启动
-                # 时浏览器/钥匙串还没就绪就误报),给用户一个明确的可操作出口。
-                if _claude_last_ok and time.time() - _claude_last_ok > CLAUDE_STALE_AFTER_SEC:
-                    state["claude"]["stale"] = True
-                if fail_count >= 2:
-                    state["claude"]["needsLogin"] = True
-                # Say WHY the cookie path failed. "Log in" is the wrong advice
-                # when the real problem is that the cookie DB couldn't be read.
-                state["claude"]["cookieDiag"] = dict(_claude_cookie_diag)
-                state["claude"]["needsDiskAccess"] = _claude_needs_disk_access
-                if _claude_needs_disk_access:
-                    _log_claude("⚠ 系统不允许读取 Chrome 登录信息 — 请在「系统设置 › 隐私与安全性 › "
-                                "完全磁盘访问权限」里允许 AI Usage Ball", dedup=True)
-                else:
-                    why = _claude_cookie_diag_summary()
-                    _log_claude("⚠ 取不到用量 — 终端跑 `claude auth login`,或在浏览器登录 claude.ai"
-                                + (f" ({why})" if why else ""), dedup=True)
-                state["claude"]["cliRefresh"] = _claude_cli_touch_note
-                fail_count += 1
-                await asyncio.sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
+            mode = effective_data_mode()
+            if mode == "demo":
+                apply_demo_state()
+                await _wait_config_or_sleep(5.0)
                 continue
+
+            if mode == "manual" or MAS_MODE:
+                tok = app_config.get("claude_token", "")
+                sk = app_config.get("claude_session_key", "")
+                usage, source = await asyncio.to_thread(fetch_claude_usage_via_manual, tok, sk)
+                if not usage:
+                    state["claude"]["loaded"] = True
+                    state["claude"]["needsSetup"] = True
+                    state["claude"]["needsLogin"] = False
+                    state["claude"]["needsDiskAccess"] = False
+                    await _wait_config_or_sleep(30.0)
+                    continue
+                state["claude"]["needsSetup"] = False
+            else:
+                usage, source = await asyncio.to_thread(fetch_claude_usage_resilient)
+                if not usage:
+                    # cookie + OAuth 都拿不到(浏览器没登录 claude.ai 且 token 也失效)。
+                    if _claude_last_ok and time.time() - _claude_last_ok > CLAUDE_STALE_AFTER_SEC:
+                        state["claude"]["stale"] = True
+                    if fail_count >= 2:
+                        state["claude"]["needsLogin"] = True
+                    state["claude"]["cookieDiag"] = dict(_claude_cookie_diag)
+                    state["claude"]["needsDiskAccess"] = _claude_needs_disk_access
+                    if _claude_needs_disk_access:
+                        _log_claude("⚠ 系统不允许读取 Chrome 登录信息 — 请在「系统设置 › 隐私与安全性 › "
+                                    "完全磁盘访问权限」里允许 AI Usage Ball", dedup=True)
+                    else:
+                        why = _claude_cookie_diag_summary()
+                        _log_claude("⚠ 取不到用量 — 终端跑 `claude auth login`,或在浏览器登录 claude.ai"
+                                    + (f" ({why})" if why else ""), dedup=True)
+                    state["claude"]["cliRefresh"] = _claude_cli_touch_note
+                    fail_count += 1
+                    await _wait_config_or_sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
+                    continue
+                state["claude"]["needsSetup"] = False
 
             fh = usage.get("five_hour") or {}
             sd = usage.get("seven_day") or {}
@@ -733,17 +927,18 @@ async def poll_claude_oauth():
             state["claude"]["stale"] = False
             state["claude"]["needsLogin"] = False
             state["claude"]["needsDiskAccess"] = False
+            state["claude"]["needsSetup"] = False
             state["claude"]["cookieDiag"] = {}
             state["claude"]["cliRefresh"] = _claude_cli_touch_note
             state["claude"]["tokenExpired"] = False
             state["claude"]["updatedAt"] = datetime.now(timezone.utc).isoformat()
             _log_claude(f"Claude({source}): session {fh_util:.0f}% used, weekly {sd_util:.0f}% used",
                         dedup=True)
-            await asyncio.sleep(60.0)  # usage changes slowly; once a minute is plenty
+            await _wait_config_or_sleep(60.0)
         except Exception as e:
             print(f"Error polling Claude usage: {e}")
             fail_count += 1
-            await asyncio.sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
+            await _wait_config_or_sleep(5.0 if fail_count <= CLAUDE_FAST_RETRY_MAX else 60.0)
 
 # ── Codex/ChatGPT: real usage from chatgpt.com backend (reuse Codex CLI auth) ──
 CODEX_HOME = os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex"))
@@ -775,12 +970,27 @@ def fetch_codex_usage(token, account_id):
         return json.loads(resp.read().decode())
 
 async def poll_codex_oauth():
-    print("Starting Codex usage polling (chatgpt.com backend)...")
+    print("Starting Codex usage polling...")
     while True:
         try:
-            token, acct = await asyncio.to_thread(get_codex_auth)
+            mode = effective_data_mode()
+            if mode == "demo":
+                await _wait_config_or_sleep(5.0)
+                continue
+
+            if mode == "manual" or MAS_MODE:
+                token = app_config.get("codex_token", "").strip()
+                acct = app_config.get("codex_account_id", "").strip()
+            else:
+                token, acct = await asyncio.to_thread(get_codex_auth)
+
             if not token:
-                print("Codex auth.json token not found. Skipping.")
+                if mode == "manual" or MAS_MODE:
+                    state["codex"]["loaded"] = True
+                    state["codex"]["needsSetup"] = True
+                else:
+                    print("Codex auth.json token not found. Skipping.")
+                    state["codex"]["needsSetup"] = False
             else:
                 usage = await asyncio.to_thread(fetch_codex_usage, token, acct)
                 rl = usage.get("rate_limit") or {}
@@ -788,19 +998,13 @@ async def poll_codex_oauth():
                 sec = rl.get("secondary_window") or {}
                 pri_used = safe_pct(pri.get("used_percent", 0))
                 sec_used = safe_pct(sec.get("used_percent", 0))
-                # ChatGPT returns a rolling reset_at even before the user has
-                # made the first request in a fresh five-hour window. In that
-                # state the timestamp is renewed on every poll, so rendering
-                # it as a countdown makes the UI stick around 04:59:xx.
-                # used_percent > 0 is the signal that the window has actually
-                # started and that its reset_at is meaningful.
                 primary_window_started = codex_primary_window_started(pri)
                 reset_at = pri.get("reset_at")
                 reset_at_secondary = sec.get("reset_at")
-                # "限额重置券"剩余张数(撞限额时可立刻重置额度)
                 reset_credits = (usage.get("rate_limit_reset_credits") or {}).get("available_count")
 
                 state["codex"]["loaded"] = True
+                state["codex"]["needsSetup"] = False
                 state["codex"]["rate_limit_pct"] = pri_used
                 state["codex"]["rate_limit_pct_secondary"] = sec_used
                 state["codex"]["primary_window_started"] = primary_window_started
@@ -823,15 +1027,21 @@ async def poll_codex_oauth():
                 if not state["codex"]["logs"] or state["codex"]["logs"][0]["msg"] != msg:
                     state["codex"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})
                     state["codex"]["logs"] = state["codex"]["logs"][:30]
-            await asyncio.sleep(60.0)  # once a minute is plenty
+            await _wait_config_or_sleep(60.0)
             continue
         except urllib.error.HTTPError as e:
             print(f"Codex usage HTTP {e.code} {e.reason}")
-            await asyncio.sleep(120.0 if e.code == 429 else 60.0)
+            if effective_data_mode() == "manual" or MAS_MODE:
+                state["codex"]["loaded"] = True
+                state["codex"]["needsSetup"] = True
+            await _wait_config_or_sleep(120.0 if e.code == 429 else 60.0)
             continue
         except Exception as e:
             print(f"Error polling Codex usage: {e}")
-        await asyncio.sleep(60.0)
+            if effective_data_mode() == "manual" or MAS_MODE:
+                state["codex"]["loaded"] = True
+                state["codex"]["needsSetup"] = True
+        await _wait_config_or_sleep(60.0)
 
 # ── Antigravity: real quota from its locally-running language server ──
 # Mirrors CodexBar: find the language_server_macos process, read its --csrf_token,
@@ -933,31 +1143,218 @@ def _ag_worst(models, keyword, exclude=None):
 
 ANTIGRAVITY_FAST_RETRY_MAX = 6  # 同上,连续失败超过这么多次就退回 20s 节奏
 
+def _find_agy_cli():
+    """Locate the official `agy` CLI binary, checking common install paths outside GUI PATH."""
+    found = shutil.which("agy")
+    if found:
+        return found
+    home = os.path.expanduser("~")
+    for c in (
+        f"{home}/.local/bin/agy",
+        "/opt/homebrew/bin/agy",
+        "/usr/local/bin/agy",
+        f"{home}/.antigravity/bin/agy",
+    ):
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+def _ag_pick_bucket(buckets):
+    """Pick the tightest quota bucket from a group's buckets list (ties prefer 5h over weekly)."""
+    best = None
+    best_key = None
+    for b in (buckets or []):
+        if not isinstance(b, dict):
+            continue
+        raw_frac = b.get("remaining_fraction")
+        if raw_frac is None:
+            frac = 0.0
+        elif isinstance(raw_frac, bool):
+            continue
+        else:
+            try:
+                frac = float(raw_frac)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(frac):
+                continue
+        frac = max(0.0, min(1.0, frac))
+        win = str(b.get("window") or "").strip().lower()
+        win_rank = 0 if win in ("5h", "five_hour", "session") else 1
+        reset_iso = _ag_iso(b.get("reset_time") or "")
+        key = (frac, win_rank, reset_iso)
+        if best_key is None or key < best_key:
+            best_key = key
+            best = (frac, reset_iso)
+    return best
+
+def _ag_parse_agy_groups(groups):
+    """Extract (gemini, gemini4, claude) (remaining_fraction, reset_iso) tuples from `agy -p /usage` groups."""
+    gemini = None
+    gemini_weekly = None
+    gemini4 = None
+    claude = None
+
+    def _tighter(cur, cand):
+        if cand is None:
+            return cur
+        if cur is None or cand[0] < cur[0]:
+            return cand
+        return cur
+
+    for g in (groups or []):
+        if not isinstance(g, dict):
+            continue
+        buckets = g.get("buckets") or []
+        if not isinstance(buckets, list) or not buckets:
+            continue
+        picked = _ag_pick_bucket(buckets)
+        if picked is None:
+            continue
+        g_name = str(g.get("name") or "").lower()
+        bucket_ids = [str((b or {}).get("id") or "").lower() for b in buckets if isinstance(b, dict)]
+
+        if "argon" in g_name or "gemini 4" in g_name or any("argon" in bid for bid in bucket_ids):
+            gemini4 = _tighter(gemini4, picked)
+        elif "claude" in g_name or any("3p-" in bid for bid in bucket_ids):
+            claude = _tighter(claude, picked)
+        elif "gemini" in g_name or any("gemini-" in bid for bid in bucket_ids):
+            gemini = _tighter(gemini, picked)
+            weekly_buckets = [
+                b for b in buckets
+                if isinstance(b, dict) and (
+                    str(b.get("window") or "").strip().lower() == "weekly"
+                    or "weekly" in str(b.get("id") or "").lower()
+                )
+            ]
+            gemini_weekly = _tighter(gemini_weekly, _ag_pick_bucket(weekly_buckets))
+
+    # Ultra plans merge Argon into the general Gemini quota rather than exposing a separate Argon group.
+    if gemini4 is None:
+        gemini4 = gemini_weekly or gemini
+    return gemini, gemini4, claude
+
+def fetch_antigravity_usage_via_agy_cli():
+    """Query `agy -p /usage --output-format json` when local language_server hides --csrf_token (2.34+)."""
+    cli = _find_agy_cli()
+    if not cli:
+        return None
+    try:
+        proc = subprocess.run(
+            [cli, "-p", "/usage", "--output-format", "json"],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            cwd=tempfile.gettempdir(),
+            timeout=25,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    raw = (proc.stdout or "").strip()
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        idx = raw.find("{")
+        if idx < 0:
+            return None
+        try:
+            payload = json.loads(raw[idx:])
+        except Exception:
+            return None
+    if not isinstance(payload, dict) or payload.get("status") != "SUCCESS":
+        return None
+    groups = ((payload.get("command") or {}).get("data") or {}).get("groups")
+    if not isinstance(groups, list) or not groups:
+        return None
+    gemini, gemini4, claude = _ag_parse_agy_groups(groups)
+    if gemini is None and gemini4 is None and claude is None:
+        return None
+    return {
+        "source": "agy",
+        "gemini": gemini,
+        "gemini4": gemini4,
+        "claude": claude,
+        "plan": "agy CLI",
+    }
+
+def _ag_extract_from_local_status(status):
+    """Normalize local language_server GetUserStatus response into unified quota slots."""
+    if not isinstance(status, dict):
+        return None
+    us = status.get("userStatus") or {}
+    models = ((us.get("cascadeModelConfigData") or {}).get("clientModelConfigs")) or []
+    gemini = _ag_worst(models, "gemini", exclude="gemini 4")
+    gemini4 = _ag_worst(models, "gemini 4")
+    claude = _ag_worst(models, "claude")
+    if gemini is None and gemini4 is None and claude is None:
+        return None
+    plan = ((us.get("planStatus") or {}).get("planInfo") or {}).get("planName", "")
+    return {
+        "source": "local",
+        "gemini": gemini,
+        "gemini4": gemini4,
+        "claude": claude,
+        "plan": plan,
+    }
+
+def _ag_mark_offline(needs_setup=False):
+    ag = state["antigravity"]
+    ag["available"] = False
+    ag["loaded"] = True
+    ag["needsSetup"] = needs_setup
+    ag["rate_limit_pct"] = 0.0
+    ag["rate_limit_pct_secondary"] = 0.0
+    ag["rate_limit_pct_tertiary"] = 0.0
+    ag["status"] = "OFFLINE"
+    ag["status_secondary"] = "OFFLINE"
+    ag["status_tertiary"] = "OFFLINE"
+    ag["resetsAt"] = ""
+    ag["resetsAt_secondary"] = ""
+    ag["resetsAt_tertiary"] = ""
+
 async def poll_antigravity_local():
-    """失败重试用短间隔而不是跟成功一样的 20s —— 冷启动时第一次探测常因为
-    language_server 的 ps/端口列表还没就绪而落空,如果失败也等 20s,首次
-    显示真实数据就要接近 20 秒(实测正是如此)。"""
-    print("Starting Antigravity usage polling (local language server)...")
+    """Poll Antigravity quota via local language_server RPC first, then `agy -p /usage` fallback."""
+    print("Starting Antigravity usage polling...")
     fail_count = 0
     while True:
         ok = False
+        source = None
         try:
-            status = await asyncio.to_thread(fetch_antigravity_status)
-            if not status:
-                # Antigravity not running / not reachable → mark offline.
-                state["antigravity"]["available"] = False
-                state["antigravity"]["status"] = "OFFLINE"
-                state["antigravity"]["status_secondary"] = "OFFLINE"
-                state["antigravity"]["status_tertiary"] = "OFFLINE"
+            mode = effective_data_mode()
+            if mode == "demo":
+                await _wait_config_or_sleep(5.0)
+                continue
+
+            if mode == "manual" or MAS_MODE:
+                port = app_config.get("antigravity_port", "").strip()
+                csrf = app_config.get("antigravity_csrf", "").strip()
+                if not port or not csrf:
+                    _ag_mark_offline(needs_setup=True)
+                    await _wait_config_or_sleep(20.0)
+                    continue
+                status = await asyncio.to_thread(_ag_call, port, "GetUserStatus", csrf)
+                parsed = _ag_extract_from_local_status(status)
+            else:
+                status = await asyncio.to_thread(fetch_antigravity_status)
+                parsed = _ag_extract_from_local_status(status) if status else None
+                if not parsed:
+                    parsed = await asyncio.to_thread(fetch_antigravity_usage_via_agy_cli)
+
+            if not parsed:
+                _ag_mark_offline(needs_setup=(mode == "manual" or MAS_MODE))
             else:
                 ok = True
-                us = status.get("userStatus") or {}
-                models = ((us.get("cascadeModelConfigData") or {}).get("clientModelConfigs")) or []
-                gemini = _ag_worst(models, "gemini", exclude="gemini 4")
-                gemini4 = _ag_worst(models, "gemini 4")
-                claude = _ag_worst(models, "claude")
+                source = parsed["source"]
+                gemini = parsed["gemini"]
+                gemini4 = parsed["gemini4"]
+                claude = parsed["claude"]
                 state["antigravity"]["available"] = True
                 state["antigravity"]["loaded"] = True
+                state["antigravity"]["needsSetup"] = False
 
                 # Third orb:
                 # - outer ring (primary)   = "GEMINI REMAINING"   (secondary fields: Gemini 3.8 Flash)
@@ -968,18 +1365,32 @@ async def poll_antigravity_local():
                     state["antigravity"]["rate_limit_pct_secondary"] = g_used
                     state["antigravity"]["resetsAt_secondary"] = _ag_iso(gemini[1])
                     state["antigravity"]["status_secondary"] = "EXHAUSTED" if g_used >= 100 else "NORMAL"
+                else:
+                    state["antigravity"]["rate_limit_pct_secondary"] = 0.0
+                    state["antigravity"]["resetsAt_secondary"] = ""
+                    state["antigravity"]["status_secondary"] = "NORMAL"
+
                 if claude:
                     c_used = max(0.0, (1.0 - float(claude[0])) * 100.0)
                     state["antigravity"]["rate_limit_pct"] = c_used
                     state["antigravity"]["resetsAt"] = _ag_iso(claude[1])
                     state["antigravity"]["status"] = "EXHAUSTED" if c_used >= 100 else "NORMAL"
+                else:
+                    state["antigravity"]["rate_limit_pct"] = 0.0
+                    state["antigravity"]["resetsAt"] = ""
+                    state["antigravity"]["status"] = "NORMAL"
+
                 if gemini4:
                     g4_used = max(0.0, (1.0 - float(gemini4[0])) * 100.0)
                     state["antigravity"]["rate_limit_pct_tertiary"] = g4_used
                     state["antigravity"]["resetsAt_tertiary"] = _ag_iso(gemini4[1])
                     state["antigravity"]["status_tertiary"] = "EXHAUSTED" if g4_used >= 100 else "NORMAL"
+                else:
+                    state["antigravity"]["rate_limit_pct_tertiary"] = 0.0
+                    state["antigravity"]["resetsAt_tertiary"] = ""
+                    state["antigravity"]["status_tertiary"] = "NORMAL"
 
-                plan = ((us.get("planStatus") or {}).get("planInfo") or {}).get("planName", "")
+                plan = parsed.get("plan") or source or "local"
                 timestamp = time.strftime("%H:%M:%S")
                 gpart = f"Gemini {100 - state['antigravity']['rate_limit_pct_secondary']:.0f}%" if gemini else ""
                 g4part = f"Gemini 4 {100 - state['antigravity']['rate_limit_pct_tertiary']:.0f}%" if gemini4 else ""
@@ -991,9 +1402,14 @@ async def poll_antigravity_local():
                     state["antigravity"]["logs"] = state["antigravity"]["logs"][:30]
         except Exception as e:
             print(f"Error polling Antigravity: {e}")
-            state["antigravity"]["available"] = False
+            is_manual = (effective_data_mode() == "manual" or MAS_MODE)
+            _ag_mark_offline(needs_setup=is_manual)
         fail_count = 0 if ok else fail_count + 1
-        await asyncio.sleep(20.0 if (ok or fail_count > ANTIGRAVITY_FAST_RETRY_MAX) else 3.0)
+        if ok:
+            sleep_sec = 60.0 if source == "agy" else 20.0
+        else:
+            sleep_sec = 5.0 if fail_count <= ANTIGRAVITY_FAST_RETRY_MAX else 20.0
+        await _wait_config_or_sleep(sleep_sec)
 
 # ── Grok: real usage via Grok Bot local persistence (sand-client-persistence) ──
 GROK_PERSISTENCE_DIR = os.path.expanduser("~/Library/Application Support/Grok Bot/sand-client-persistence")
@@ -1082,14 +1498,45 @@ def read_grok_bot_usage():
     return {"ok": True, "pct": max(0.0, pct), "next_reset_ms": next_reset, "plan": str(plan)}
 
 async def poll_grok_bot():
-    print("Starting Grok Bot usage polling (sand-client-persistence)...")
+    print("Starting Grok Bot usage polling...")
     while True:
         try:
+            mode = effective_data_mode()
+            if mode == "demo":
+                await _wait_config_or_sleep(5.0)
+                continue
+
+            if mode == "manual" or MAS_MODE:
+                raw_pct = app_config.get("grok_manual_pct", "").strip()
+                if not raw_pct:
+                    state["grok"]["available"] = False
+                    state["grok"]["loaded"] = True
+                    state["grok"]["needsSetup"] = True
+                    await _wait_config_or_sleep(10.0)
+                    continue
+                try:
+                    pct = max(0.0, min(100.0, float(raw_pct)))
+                    state["grok"]["available"] = True
+                    state["grok"]["loaded"] = True
+                    state["grok"]["needsSetup"] = False
+                    state["grok"]["rate_limit_pct"] = pct
+                    state["grok"]["resetsAt"] = ""
+                    state["grok"]["plan"] = "PRO"
+                    state["grok"]["status"] = "EXHAUSTED" if pct >= 100 else "NORMAL"
+                except ValueError:
+                    state["grok"]["available"] = False
+                    state["grok"]["loaded"] = True
+                    state["grok"]["needsSetup"] = True
+                await _wait_config_or_sleep(10.0)
+                continue
+
             result = await asyncio.to_thread(read_grok_bot_usage)
             if result is None:
                 _grok_mark_unavailable("OFFLINE")
+                state["grok"]["needsSetup"] = False
             elif not result["ok"]:
                 _grok_mark_unavailable(result["status"])
+                state["grok"]["needsSetup"] = False
             else:
                 pct = result["pct"]
                 next_reset_ms = result["next_reset_ms"]
@@ -1100,6 +1547,7 @@ async def poll_grok_bot():
                 plan = result["plan"]
                 state["grok"]["available"] = True
                 state["grok"]["loaded"] = True
+                state["grok"]["needsSetup"] = False
                 state["grok"]["rate_limit_pct"] = pct
                 state["grok"]["resetsAt"] = resets_at
                 state["grok"]["plan"] = plan
@@ -1113,7 +1561,7 @@ async def poll_grok_bot():
         except Exception as e:
             print(f"Grok polling error: {e}")
             _grok_mark_unavailable("OFFLINE")   # never turn a failed parse into 100% remaining
-        await asyncio.sleep(5.0)
+        await _wait_config_or_sleep(5.0)
 
 # ── Team View: LAN-only peer discovery (opt-in, no cloud) ──
 # Lets 2-3 teammates on the same local network see each other's remaining %
@@ -1124,6 +1572,7 @@ TEAM_SERVICE_TYPE = "_aipulseteam._tcp.local."
 TEAM_CRITICAL_PCT = 10.0  # matches the orb UI's isCritical threshold (App.jsx)
 
 team_settings = {"enabled": False, "display_name": "", "instance_id": ""}
+_team_lock = threading.Lock()
 # mDNS instance name -> {"host", "port", "last_seen"}
 _team_discovered = {}
 # instance_id -> {"host", "port", "display_name"} — pinned by the frontend;
@@ -1147,7 +1596,9 @@ def _team_status_payload():
     claude_remaining = _remaining(state["claude"]["rate_limit_pct"])
     codex_remaining = _remaining(state["codex"]["rate_limit_pct"])
     # Antigravity's primary orb ring is Gemini, stored in the secondary field — see App.jsx.
-    antigravity_remaining = _remaining(state["antigravity"]["rate_limit_pct_secondary"])
+    ag_state = state.get("antigravity", {})
+    ag_known = ag_state.get("available") is True
+    antigravity_remaining = _remaining(ag_state.get("rate_limit_pct_secondary")) if ag_known else None
     grok_state = state.get("grok", {})
     grok_known = grok_state.get("available") is True and grok_state.get("rate_limit_pct") is not None
     grok_remaining = _remaining(grok_state.get("rate_limit_pct")) if grok_known else None
@@ -1158,7 +1609,7 @@ def _team_status_payload():
         "providers": {
             "claude": {"remaining_pct": claude_remaining, "critical": claude_remaining < TEAM_CRITICAL_PCT},
             "codex": {"remaining_pct": codex_remaining, "critical": codex_remaining < TEAM_CRITICAL_PCT},
-            "antigravity": {"remaining_pct": antigravity_remaining, "critical": antigravity_remaining < TEAM_CRITICAL_PCT},
+            "antigravity": {"remaining_pct": antigravity_remaining, "critical": antigravity_remaining < TEAM_CRITICAL_PCT} if ag_known else None,
             # None = Grok offline/stale: teammates see "···" instead of a fake 100%.
             "grok": {"remaining_pct": grok_remaining, "critical": grok_remaining < TEAM_CRITICAL_PCT} if grok_known else None,
         },
@@ -1227,22 +1678,21 @@ async def apply_team_sharing():
 
 
 class _TeamServiceListener(ServiceListener):
-    """Tracks other AI Usage Ball instances broadcasting on the LAN.
-    Callbacks run on zeroconf's own thread; the dict they mutate is only
-    ever read/written under the GIL, which is enough for this best-effort
-    discovery cache (no correctness-critical ordering needed)."""
+    """Tracks other AI Usage Ball instances broadcasting on the LAN."""
 
     def add_service(self, zc, type_, name):
         info = zc.get_service_info(type_, name, timeout=2000)
         if info and info.addresses:
             host = socket.inet_ntoa(info.addresses[0])
-            _team_discovered[name] = {"host": host, "port": info.port, "last_seen": time.time()}
+            with _team_lock:
+                _team_discovered[name] = {"host": host, "port": info.port, "last_seen": time.time()}
 
     def update_service(self, zc, type_, name):
         self.add_service(zc, type_, name)
 
     def remove_service(self, zc, type_, name):
-        _team_discovered.pop(name, None)
+        with _team_lock:
+            _team_discovered.pop(name, None)
 
 
 def _fetch_team_status_sync(host: str, port: int):
@@ -1251,12 +1701,36 @@ def _fetch_team_status_sync(host: str, port: int):
         return json.loads(resp.read().decode())
 
 
+async def _probe_peer(host: str, port: int):
+    try:
+        payload = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_team_status_sync, host, port), timeout=3.0
+        )
+        iid = payload.get("instance_id")
+        if not iid or iid == team_settings.get("instance_id"):
+            return  # never show yourself in your own team list
+        _team_peers_cache[iid] = {
+            "instance_id": iid,
+            "display_name": payload.get("display_name", "Teammate"),
+            "host": host,
+            "port": port,
+            "online": True,
+            "providers": payload.get("providers", {}),
+            "updated_at": payload.get("updated_at", ""),
+            "last_seen": time.time(),
+        }
+    except Exception:
+        # Keep last-known values, just flip online off — graceful
+        # degradation, not an error. Only touches peers we've already
+        # successfully fetched from before.
+        for cached in _team_peers_cache.values():
+            if cached["host"] == host and cached["port"] == port:
+                cached["online"] = False
+
+
 async def browse_team_peers():
     """Discover other AI Usage Ball instances on the LAN (mDNS) and poll each
-    discovered/pinned/manually-added peer's /api/team-status every few
-    seconds. Never blocks startup — _team_zc was already set up (or left
-    None) by lifespan()'s own hard-timeout-guarded init before this task
-    even starts."""
+    discovered/pinned/manually-added peer's /api/team-status concurrently."""
     if _team_zc is not None:
         try:
             def _start_browser():
@@ -1270,38 +1744,36 @@ async def browse_team_peers():
         await asyncio.sleep(5.0)
 
         targets = {}
-        for name, d in list(_team_discovered.items()):
-            targets[name] = (d["host"], d["port"])
+        with _team_lock:
+            discovered_items = list(_team_discovered.items())
+        discovered_addrs = set()
+        for name, d in discovered_items:
+            addr = (d["host"], d["port"])
+            targets[name] = addr
+            discovered_addrs.add(addr)
         for iid, p in list(_team_pinned.items()):
             key = f"pinned:{iid}"
             if key not in targets:
                 targets[key] = (p["host"], p["port"])
 
-        for host, port in set(targets.values()):
-            try:
-                payload = await asyncio.wait_for(
-                    asyncio.to_thread(_fetch_team_status_sync, host, port), timeout=3.0
-                )
-                iid = payload.get("instance_id")
-                if not iid or iid == team_settings.get("instance_id"):
-                    continue  # never show yourself in your own team list
-                _team_peers_cache[iid] = {
-                    "instance_id": iid,
-                    "display_name": payload.get("display_name", "Teammate"),
-                    "host": host,
-                    "port": port,
-                    "online": True,
-                    "providers": payload.get("providers", {}),
-                    "updated_at": payload.get("updated_at", ""),
-                }
-            except Exception:
-                # Keep last-known values, just flip online off — graceful
-                # degradation, not an error. Only touches peers we've already
-                # successfully fetched from before.
-                for cached in _team_peers_cache.values():
-                    if cached["host"] == host and cached["port"] == port:
-                        cached["online"] = False
-                        break
+        unique_targets = set(targets.values())
+        if unique_targets:
+            await asyncio.gather(
+                *(_probe_peer(host, port) for host, port in unique_targets),
+                return_exceptions=True,
+            )
+
+        now = time.time()
+        for iid in list(_team_peers_cache.keys()):
+            cached = _team_peers_cache[iid]
+            addr = (cached["host"], cached["port"])
+            if (
+                not cached.get("online")
+                and iid not in _team_pinned
+                and addr not in discovered_addrs
+                and now - cached.get("last_seen", now) > 300.0
+            ):
+                _team_peers_cache.pop(iid, None)
 
 
 class TeamSettingsBody(BaseModel):
@@ -1320,7 +1792,9 @@ class TeamManualPeerBody(BaseModel):
 
 
 @app.post("/api/team-settings")
-async def set_team_settings(body: TeamSettingsBody):
+async def set_team_settings(body: TeamSettingsBody, request: Request):
+    if not _is_localhost(request):
+        raise HTTPException(status_code=403, detail="Endpoint is localhost-only")
     team_settings["enabled"] = body.enabled
     team_settings["display_name"] = body.display_name.strip()[:40]
     if body.instance_id:
@@ -1337,12 +1811,16 @@ def get_team_status():
 
 
 @app.get("/api/team-peers")
-def get_team_peers():
+def get_team_peers(request: Request):
+    if not _is_localhost(request):
+        raise HTTPException(status_code=403, detail="Endpoint is localhost-only")
     return {"peers": list(_team_peers_cache.values())}
 
 
 @app.post("/api/team-peers/manual")
-async def add_team_peer_manual(body: TeamManualPeerBody):
+async def add_team_peer_manual(body: TeamManualPeerBody, request: Request):
+    if not _is_localhost(request):
+        raise HTTPException(status_code=403, detail="Endpoint is localhost-only")
     try:
         payload = await asyncio.wait_for(
             asyncio.to_thread(_fetch_team_status_sync, body.host, body.port), timeout=5.0
@@ -1367,12 +1845,15 @@ async def add_team_peer_manual(body: TeamManualPeerBody):
         "online": True,
         "providers": payload.get("providers", {}),
         "updated_at": payload.get("updated_at", ""),
+        "last_seen": time.time(),
     }
     return _team_peers_cache[iid]
 
 
 @app.post("/api/team-pins")
-def set_team_pins(body: TeamPinsBody):
+def set_team_pins(body: TeamPinsBody, request: Request):
+    if not _is_localhost(request):
+        raise HTTPException(status_code=403, detail="Endpoint is localhost-only")
     global _team_pinned
     _team_pinned = {
         p["instance_id"]: {"host": p.get("host", ""), "port": p.get("port", SERVER_PORT)}
@@ -1414,18 +1895,32 @@ def get_video(request: Request):
             VIDEO_PATH, media_type="video/mp4", headers={"accept-ranges": "bytes"}
         )
 
-    # Parse "bytes=start-end" and reply with 206 Partial Content. macOS WKWebView
-    # requires this to play <video>; a plain 200 makes the orb stay blank.
+    # Parse "bytes=start-end" (including suffix "bytes=-N" and open-ended "bytes=N-")
+    # and reply with 206 Partial Content. macOS WKWebView requires this to play <video>.
     try:
-        _unit, rng = range_header.split("=")
-        start_s, end_s = rng.split("-")
-        start = int(start_s) if start_s else 0
-        end = int(end_s) if end_s else file_size - 1
+        unit, rng = range_header.strip().split("=", 1)
+        if unit.strip().lower() != "bytes":
+            raise ValueError("unsupported unit")
+        rng = rng.split(",", 1)[0].strip()
+        start_s, end_s = rng.split("-", 1)
+        if not start_s and not end_s:
+            raise ValueError("empty range")
+        if not start_s:
+            suffix = int(end_s)
+            if suffix <= 0:
+                return Response(status_code=416, headers={"content-range": f"bytes */{file_size}"})
+            start = max(0, file_size - suffix)
+            end = file_size - 1
+        else:
+            start = int(start_s)
+            end = int(end_s) if end_s else file_size - 1
     except Exception:
         start, end = 0, file_size - 1
 
     start = max(0, start)
     end = min(end, file_size - 1)
+    if start >= file_size or start > end:
+        return Response(status_code=416, headers={"content-range": f"bytes */{file_size}"})
     length = end - start + 1
 
     # Read the exact range into memory (file is small, ~4MB) and return it as a
@@ -1444,9 +1939,119 @@ def get_video(request: Request):
     }
     return Response(content=data, status_code=206, headers=headers)
 
+def _is_localhost(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
+def _config_summary() -> dict:
+    return {
+        "data_mode": effective_data_mode(),
+        "mas_mode": MAS_MODE,
+        "antigravity_port": app_config.get("antigravity_port", ""),
+        "grok_manual_pct": app_config.get("grok_manual_pct", ""),
+        "has_claude_token": bool(app_config.get("claude_token")),
+        "has_claude_session_key": bool(app_config.get("claude_session_key")),
+        "has_codex_token": bool(app_config.get("codex_token")),
+        "has_codex_account_id": bool(app_config.get("codex_account_id")),
+        "has_antigravity_csrf": bool(app_config.get("antigravity_csrf")),
+        "configured": {
+            "claude_token": bool(app_config.get("claude_token")),
+            "claude_session_key": bool(app_config.get("claude_session_key")),
+            "codex_token": bool(app_config.get("codex_token")),
+            "codex_account_id": bool(app_config.get("codex_account_id")),
+            "antigravity_csrf": bool(app_config.get("antigravity_csrf")),
+        },
+    }
+
+
+class AppConfigUpdate(BaseModel):
+    data_mode: str | None = None
+    claude_token: str | None = None
+    claude_session_key: str | None = None
+    codex_token: str | None = None
+    codex_account_id: str | None = None
+    antigravity_port: str | int | None = None
+    antigravity_csrf: str | None = None
+    grok_manual_pct: str | int | float | None = None
+
+
+@app.get("/api/config")
+def get_config(request: Request):
+    if not _is_localhost(request):
+        raise HTTPException(status_code=403, detail="Config endpoint is localhost-only")
+    return _config_summary()
+
+
+@app.post("/api/config")
+def update_config(body: AppConfigUpdate, request: Request):
+    if not _is_localhost(request):
+        raise HTTPException(status_code=403, detail="Config endpoint is localhost-only")
+
+    prev_mode = effective_data_mode()
+    if body.data_mode is not None:
+        next_mode = body.data_mode.strip()
+        if next_mode not in ("demo", "manual", "auto"):
+            raise HTTPException(status_code=400, detail="Invalid data_mode")
+        if MAS_MODE and next_mode == "auto":
+            next_mode = "demo"
+        app_config["data_mode"] = next_mode
+
+    for field in (
+        "claude_token",
+        "claude_session_key",
+        "codex_token",
+        "codex_account_id",
+        "antigravity_port",
+        "antigravity_csrf",
+        "grok_manual_pct",
+    ):
+        val = getattr(body, field)
+        if val is not None:
+            app_config[field] = str(val).strip()
+
+    save_app_config(app_config)
+
+    new_mode = effective_data_mode()
+    if new_mode == "demo":
+        apply_demo_state(force_reset_timers=(prev_mode != "demo"))
+    elif prev_mode == "demo":
+        # Leaving demo mode: reset loaded flags briefly until pollers fetch live or flag needsSetup.
+        for key in ("claude", "codex", "antigravity", "grok"):
+            state[key]["loaded"] = False
+            state[key]["rate_limit_pct"] = 0.0
+            state[key]["resetsAt"] = ""
+            if "rate_limit_pct_secondary" in state[key]:
+                state[key]["rate_limit_pct_secondary"] = 0.0
+                state[key]["resetsAt_secondary"] = ""
+            if "rate_limit_pct_tertiary" in state[key]:
+                state[key]["rate_limit_pct_tertiary"] = 0.0
+                state[key]["resetsAt_tertiary"] = ""
+
+    _notify_config_changed()
+    return _config_summary()
+
+
+def _redacted_state() -> dict:
+    """Return a shallow copy of state without internal diagnostic logs/paths."""
+    redacted = {}
+    for k, v in state.items():
+        if isinstance(v, dict):
+            item = dict(v)
+            item.pop("logs", None)
+            item.pop("cookieDiag", None)
+            item.pop("cliRefresh", None)
+            redacted[k] = item
+        else:
+            redacted[k] = v
+    return redacted
+
+
 @app.get("/api/stats")
-def get_stats():
-    return state
+def get_stats(request: Request):
+    if _is_localhost(request):
+        return state
+    return _redacted_state()
 
 async def background_ticker():
     """Single source of state mutation, runs regardless of how many SSE clients
@@ -1460,14 +2065,23 @@ async def background_ticker():
 @app.get("/api/stream")
 async def get_stream(request: Request):
     async def event_generator():
+        last_payload = None
+        last_sent = 0.0
         while True:
             # Check client disconnection
             if await request.is_disconnected():
                 break
 
-            # State is mutated by background_ticker; here we only broadcast it.
-            yield f"data: {json.dumps(state)}\n\n"
-            await asyncio.sleep(1.0)  # Tick every 1 second
+            payload = json.dumps(_redacted_state())
+            now = time.monotonic()
+            if payload != last_payload:
+                last_payload = payload
+                last_sent = now
+                yield f"data: {payload}\n\n"
+            elif now - last_sent >= 15.0:
+                last_sent = now
+                yield ": keepalive\n\n"
+            await asyncio.sleep(1.0)  # Check disconnect / state diff every 1s
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

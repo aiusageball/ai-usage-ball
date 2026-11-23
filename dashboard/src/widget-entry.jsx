@@ -1,73 +1,37 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { resolveBackendUrl } from './backend';
+import { IS_APP_STORE, CUSTOM_LABELS_STORAGE_KEY, getCustomOrbLabels } from './config';
+import { LANG_STORAGE_KEY, getInitialLang, useT } from './i18n';
+import {
+  formatCountdownHMS,
+  formatClaudePrimaryCountdown,
+  formatCodexPrimaryCountdown,
+} from './utils/countdown';
 import './Widget.css';
 
-/* ── Shared helpers (duplicated from App.jsx to keep widget self-contained) ── */
-
-const formatCountdownHMS = (resetsAtIso) => {
-  if (!resetsAtIso) return "READY";
-  try {
-    const resetDate = new Date(resetsAtIso);
-    const now = new Date();
-    const diffMs = resetDate - now;
-    if (diffMs <= 0) return "READY";
-    const totalSecs = Math.floor(diffMs / 1000);
-    const secs = String(totalSecs % 60).padStart(2, '0');
-    const totalMins = Math.floor(totalSecs / 60);
-    const mins = String(totalMins % 60).padStart(2, '0');
-    const totalHours = Math.floor(totalMins / 60);
-    if (totalHours > 72) {
-      const days = Math.floor(totalHours / 24);
-      const remHours = totalHours % 24;
-      return `${days}d:${String(remHours).padStart(2, '0')}:${mins}`;
-    }
-    return `${String(totalHours).padStart(2, '0')}:${mins}:${secs}`;
-  } catch (e) {
-    return "READY";
-  }
-};
-
-const formatClaudePrimaryCountdown = (claude) => {
-  if (claude?.rate_limit_pct_secondary >= 100 || claude?.status_secondary === "EXHAUSTED") {
-    return "WAIT RESET";
-  }
-  return formatCountdownHMS(claude?.resetsAt);
-};
-
-// A fresh Codex five-hour window has no countdown until the first request is
-// made. The backend marks that state explicitly because the API still returns
-// a rolling reset_at timestamp while the window is idle.
-// When weekly quota is exhausted, the 5-hour window is unusable until weekly reset.
-const formatCodexPrimaryCountdown = (codex) => {
-  if (codex?.rate_limit_pct_secondary >= 100 || codex?.status_secondary === "EXHAUSTED") {
-    return "WAIT RESET";
-  }
-  if (codex?.primary_window_started === false) return "READY TO GO";
-  return formatCountdownHMS(codex?.resetsAt);
-};
-
 /* ── Orb configuration per type ── */
-const ORB_CONFIG = {
+const buildOrbConfig = (orbLabels, t) => ({
   claude: {
     color: '#ff8c00',
     secondaryColor: '#facc15',
     glowColor: 'rgba(255, 85, 0, 0.4)',
     videoFilter: 'none',
-    label: 'CLAUDE',
-    primaryLabel: 'CLAUDE REMAINING',
-    secondaryLabel: 'WEEKLY REMAINING',
+    label: orbLabels.claude.title,
+    primaryLabel: orbLabels.claude.primary,
+    secondaryLabel: orbLabels.claude.secondary,
+    hasWeeklySecondary: true,
     stackLabels: true,
     getData: (d) => ({
       percentage: (d.claude.rate_limit_pct_secondary >= 100 || d.claude.status_secondary === "EXHAUSTED") ? 0 : (100 - d.claude.rate_limit_pct),
       secondaryPercentage: 100 - d.claude.rate_limit_pct_secondary,
     }),
     getTimers: (d) => ({
-      timer: formatClaudePrimaryCountdown(d.claude),
-      secondaryTimer: formatCountdownHMS(d.claude.resetsAt_secondary),
+      timer: formatClaudePrimaryCountdown(d.claude, t),
+      secondaryTimer: formatCountdownHMS(d.claude.resetsAt_secondary, t.ready),
     }),
   },
   codex: {
@@ -75,17 +39,18 @@ const ORB_CONFIG = {
     secondaryColor: '#fb7185',
     glowColor: 'rgba(239, 68, 68, 0.4)',
     videoFilter: 'hue-rotate(320deg) saturate(2) brightness(1.2)',
-    label: 'CODEX',
-    primaryLabel: 'CODEX REMAINING',
-    secondaryLabel: 'WEEKLY REMAINING',
+    label: orbLabels.codex.title,
+    primaryLabel: orbLabels.codex.primary,
+    secondaryLabel: orbLabels.codex.secondary,
+    hasWeeklySecondary: true,
     stackLabels: true,
     getData: (d) => ({
       percentage: (d.codex.rate_limit_pct_secondary >= 100 || d.codex.status_secondary === "EXHAUSTED") ? 0 : (100 - d.codex.rate_limit_pct),
       secondaryPercentage: 100 - d.codex.rate_limit_pct_secondary,
     }),
     getTimers: (d) => ({
-      timer: formatCodexPrimaryCountdown(d.codex),
-      secondaryTimer: formatCountdownHMS(d.codex.resetsAt_secondary),
+      timer: formatCodexPrimaryCountdown(d.codex, t),
+      secondaryTimer: formatCountdownHMS(d.codex.resetsAt_secondary, t.ready),
     }),
   },
   antigravity: {
@@ -94,20 +59,21 @@ const ORB_CONFIG = {
     tertiaryColor: '#c084fc',
     glowColor: 'rgba(6, 182, 212, 0.4)',
     videoFilter: 'hue-rotate(185deg) saturate(1.8) brightness(1.2)',
-    label: 'ANTIGRAVITY',
-    primaryLabel: 'GEMINI REMAINING',
-    secondaryLabel: 'CLAUDE REMAINING',
-    tertiaryLabel: 'GEMINI 4 REMAINING',
+    label: orbLabels.antigravity.title,
+    primaryLabel: orbLabels.antigravity.primary,
+    secondaryLabel: orbLabels.antigravity.secondary,
+    tertiaryLabel: orbLabels.antigravity.tertiary,
+    hasWeeklySecondary: false,
     stackLabels: true,
     getData: (d) => ({
-      percentage: 100 - d.antigravity.rate_limit_pct_secondary,
-      secondaryPercentage: 100 - d.antigravity.rate_limit_pct,
-      tertiaryPercentage: 100 - (d.antigravity.rate_limit_pct_tertiary ?? 0),
+      percentage: 100 - (d.antigravity?.rate_limit_pct_secondary ?? 0),
+      secondaryPercentage: 100 - (d.antigravity?.rate_limit_pct ?? 0),
+      tertiaryPercentage: 100 - (d.antigravity?.rate_limit_pct_tertiary ?? 0),
     }),
     getTimers: (d) => ({
-      timer: formatCountdownHMS(d.antigravity.resetsAt_secondary),
-      secondaryTimer: formatCountdownHMS(d.antigravity.resetsAt),
-      tertiaryTimer: formatCountdownHMS(d.antigravity.resetsAt_tertiary),
+      timer: formatCountdownHMS(d.antigravity.resetsAt_secondary, t.ready),
+      secondaryTimer: formatCountdownHMS(d.antigravity.resetsAt, t.ready),
+      tertiaryTimer: formatCountdownHMS(d.antigravity.resetsAt_tertiary, t.ready),
     }),
   },
   grok: {
@@ -115,34 +81,38 @@ const ORB_CONFIG = {
     secondaryColor: '#94a3b8',
     glowColor: 'rgba(226, 232, 240, 0.4)',
     videoFilter: 'grayscale(1) brightness(1.25) contrast(1.1)',
-    label: 'GROK',
-    primaryLabel: 'GROK REMAINING',
-    secondaryLabel: 'GROK BOT',
+    label: orbLabels.grok.title,
+    primaryLabel: orbLabels.grok.primary,
+    secondaryLabel: orbLabels.grok.secondary,
+    hasWeeklySecondary: false,
     getData: (d) => ({
       percentage: (d.grok?.status === "EXHAUSTED") ? 0 : (100 - (d.grok?.rate_limit_pct || 0)),
-      secondaryLabel: d.grok?.plan ? `${d.grok.plan.toUpperCase()} PLAN` : 'GROK BOT',
+      secondaryLabel: d.grok?.plan ? (IS_APP_STORE ? orbLabels.grok.secondary : `${d.grok.plan.toUpperCase()} PLAN`) : orbLabels.grok.secondary,
     }),
     getTimers: (d) => ({
-      timer: formatCountdownHMS(d.grok?.resetsAt),
+      timer: formatCountdownHMS(d.grok?.resetsAt, t.ready),
     }),
   },
-};
+});
 
 /* ── DualRingOrb (self-contained copy for widget isolation) ── */
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, offline = false, appName = null, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, hasWeeklySecondary = false, stackLabels = false, videoFilter, offline = false, appName = null, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, needsSetup = false, onNeedsSetup = null, criticalPctThreshold = 20, criticalMinThreshold = 30, t = null }) => {
+  const uid = useId().replace(/:/g, '');
   // Which "fix it" prompt replaces the countdown, if any. Disk access wins
   // over login: when macOS refuses to open Chrome's cookie DB, logging in
   // can't help, so telling the user to do it is actively wrong. (Mirrors
   // the main window's DualRingOrb in App.jsx.)
-  const authFix = needsDiskAccess
-    ? { hint: 'GRANT ACCESS', cls: 'orb-login-hint long', cta: '⚠ ALLOW FULL DISK ACCESS', on: onNeedsDiskAccess, title: 'Open System Settings › Privacy & Security › Full Disk Access' }
-    : needsLogin
-      ? { hint: 'SIGN IN', cls: 'orb-login-hint', cta: '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: 'Open claude.ai to sign in' }
-      : null;
+  const authFix = needsSetup
+    ? { hint: t ? t.setupHint : 'SETUP', cls: 'orb-login-hint', cta: t ? t.setupCta : '⚙ CONFIGURE IN SETTINGS', on: onNeedsSetup, title: t ? t.setupTitle : 'Open Settings' }
+    : (!IS_APP_STORE && needsDiskAccess)
+      ? { hint: t ? t.grantAccessHint : 'GRANT ACCESS', cls: 'orb-login-hint long', cta: t ? t.grantAccessCta : '⚠ ALLOW FULL DISK ACCESS', on: onNeedsDiskAccess, title: t ? t.grantAccessTitle : 'Open System Settings › Privacy & Security › Full Disk Access' }
+      : (!IS_APP_STORE && needsLogin)
+        ? { hint: t ? t.signInHint : 'SIGN IN', cls: 'orb-login-hint', cta: t ? t.signInCta : '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: t ? t.signInTitle : 'Open claude.ai to sign in' }
+        : null;
   const hasSecondary = secondaryPercentage !== undefined;
   const hasTertiary = tertiaryPercentage !== undefined;
 
-  const isWeeklySecondary = secondaryLabel === "WEEKLY REMAINING";
+  const isWeeklySecondary = hasWeeklySecondary || secondaryLabel === "WEEKLY REMAINING";
   const rawPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
   const isWeeklyExhausted = hasSecondary && isWeeklySecondary && rawPctSec <= 0;
 
@@ -175,35 +145,73 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   const videoRetryRef = useRef(0);
   const loadedOnceRef = useRef(false);
 
-  const isTimerCritical = (t) => {
-    if (!t || t === "00:00:00" || !t.includes(':')) return false;
-    const parts = t.split(':');
+  const isTimerCritical = (timerStr) => {
+    if (!timerStr || timerStr === "00:00:00" || !timerStr.includes(':') || timerStr.includes('d:')) return false;
+    const parts = timerStr.split(':');
     if (parts.length === 3) {
       const h = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10);
-      return h === 0 && m < 30;
+      if (Number.isNaN(h) || Number.isNaN(m)) return false;
+      return h * 60 + m < criticalMinThreshold;
     }
     return false;
   };
 
-  const isCritical = validPct < 10 || (hasSecondary && validPctSec < 10) || (hasTertiary && validPctTer < 10) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
+  const pctThresh = criticalPctThreshold;
+  const isCritical = validPct < pctThresh || (hasSecondary && validPctSec < pctThresh) || (hasTertiary && validPctTer < pctThresh) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
   const isCriticalRef = useRef(isCritical);
   isCriticalRef.current = isCritical;
 
-  const rotationRef = useRef(Math.floor(Math.random() * 360));
-
-  // Liquid animation state (native playback — see the effect further down)
+  // Liquid animation (native playback + demand-driven easing timer)
   const lastReloadRef = useRef(0);
   const baseSpeedRef = useRef(0.8 + Math.random() * 0.4);
   const hoveringRef = useRef(false);
   const lingerTimerRef = useRef(null);
   const burstTimerRef = useRef(null);
+  const easeTimerRef = useRef(null);
   const targetSpeedRef = useRef(isCritical ? baseSpeedRef.current : 0);
   const currentSpeedRef = useRef(isCritical ? baseSpeedRef.current : 0);
 
+  const applyPlayback = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    const spd = currentSpeedRef.current;
+    if (spd > 0.05) {
+      // WebKit ignores/garbles extreme rates; the natural range here is 0.8-1.2.
+      try { v.playbackRate = Math.max(0.25, Math.min(2, spd)); } catch (e) {}
+      if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+    } else if (!v.paused) {
+      try { v.pause(); } catch (e) {}
+    }
+  };
+
+  const ensureEaseLoop = () => {
+    if (easeTimerRef.current) return;
+    const vid = videoRef.current;
+    if (vid && (vid.error || vid.readyState === 0) && Date.now() - lastReloadRef.current > 15000) {
+      lastReloadRef.current = Date.now();
+      try { vid.load(); } catch (e) {}
+    }
+    easeTimerRef.current = setInterval(() => {
+      currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.08;
+      if (targetSpeedRef.current === 0 && currentSpeedRef.current <= 0.01) {
+        currentSpeedRef.current = 0;
+        applyPlayback();
+        clearInterval(easeTimerRef.current);
+        easeTimerRef.current = null;
+        return;
+      }
+      applyPlayback();
+    }, 80);
+  };
+
   const refreshTarget = () => {
-    targetSpeedRef.current =
+    const next =
       (hoveringRef.current || isCriticalRef.current || burstTimerRef.current) ? baseSpeedRef.current : 0;
+    targetSpeedRef.current = next;
+    if (next > 0 || currentSpeedRef.current > 0.01) {
+      ensureEaseLoop();
+    }
   };
   // Flow the liquid for `ms` (default 30s), then settle back to resting state.
   const startFlowBurst = (ms = 30000) => {
@@ -213,6 +221,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
       refreshTarget();
     }, ms);
     targetSpeedRef.current = baseSpeedRef.current;
+    ensureEaseLoop();
   };
   const handleEnter = () => {
     hoveringRef.current = true;
@@ -266,36 +275,8 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   useEffect(() => () => {
     if (lingerTimerRef.current) clearTimeout(lingerTimerRef.current);
     if (burstTimerRef.current) clearTimeout(burstTimerRef.current);
+    if (easeTimerRef.current) { clearInterval(easeTimerRef.current); easeTimerRef.current = null; }
   }, []);
-
-  // ── Liquid animation: NATIVE playback, not per-frame seeking ──
-  // This used to advance `currentTime` by hand on every requestAnimationFrame
-  // tick, on the belief that WKWebView blocks video.play() without a user
-  // gesture. That belief was wrong — measured on a real widget, a muted
-  // play() resolves and advances the video normally. The old approach was
-  // also why the liquid kept mysteriously freezing: it pinned the animation
-  // to the JS event loop (~100 seeks/sec/widget), and WebKit freely throttles
-  // or suspends rAF for windows that are permanently inactive and
-  // alwaysOnBottom — exactly what a desktop widget is. When that happened the
-  // countdown (a setInterval) kept ticking while the liquid sat frozen.
-  //
-  // Native playback runs in the media pipeline instead, so no amount of JS
-  // throttling can stall it — and it costs a fraction of the CPU. The asset is
-  // already a baked 478-frame boomerang, so plain forward `loop` playback
-  // gives the same visual with no reverse seeking (see the black-frame note in
-  // App.jsx: reverse seeks flash the whole orb black in WKWebView).
-  const applyPlayback = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    const spd = currentSpeedRef.current;
-    if (spd > 0.05) {
-      // WebKit ignores/garbles extreme rates; the natural range here is 0.8-1.2.
-      try { v.playbackRate = Math.max(0.25, Math.min(2, spd)); } catch (e) {}
-      if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
-    } else if (!v.paused) {
-      try { v.pause(); } catch (e) {}
-    }
-  };
 
   useEffect(() => {
     const v = videoRef.current;
@@ -303,25 +284,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
       try { v.currentTime = Math.random() * (v.duration || 10); } catch (e) {}
     }
     currentSpeedRef.current = isCriticalRef.current ? baseSpeedRef.current : 0;
-
-    // Only eases the speed toward its target — the video keeps playing on its
-    // own between ticks, so even if this timer gets throttled the liquid still
-    // flows (it just ramps in more coarsely). 80ms ≈ 12 ticks/sec vs the old
-    // ~100 seeks/sec.
-    const id = setInterval(() => {
-      currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.08;
-      applyPlayback();
-
-      // Watchdog: if the element lost its data (backend restart, media stack
-      // eviction after a long session) reload it, otherwise the orb would sit
-      // frozen forever with no way back.
-      const vid = videoRef.current;
-      if (vid && (vid.error || vid.readyState === 0) && Date.now() - lastReloadRef.current > 15000) {
-        lastReloadRef.current = Date.now();
-        try { vid.load(); } catch (e) {}
-      }
-    }, 80);
-    return () => clearInterval(id);
+    if (targetSpeedRef.current > 0 || currentSpeedRef.current > 0.01) {
+      ensureEaseLoop();
+    }
   }, []);
 
   const isExhausted = validPct <= 0 || isWeeklyExhausted;
@@ -354,7 +319,14 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                   if (v && v.duration) v.currentTime = Math.random() * (v.duration - 0.1);
                 } catch (e) {}
               }}
-              onLoadedData={() => { loadedOnceRef.current = true; videoRetryRef.current = 0; }}
+              onLoadedData={() => {
+                loadedOnceRef.current = true;
+                videoRetryRef.current = 0;
+                if (targetSpeedRef.current > 0 || currentSpeedRef.current > 0.01) {
+                  applyPlayback();
+                  ensureEaseLoop();
+                }
+              }}
               onError={() => {
                 // Two different situations share this handler:
                 //  - Cold start: the bundled PyInstaller backend unpacks slowly,
@@ -374,7 +346,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               style={{
                 transform: `scale(${Math.max(0.01, ((isWeeklyExhausted || offline) ? 0 : validPct) / 100)})`,
                 transformOrigin: 'center center',
-                opacity: Math.min(1, (isWeeklyExhausted ? 0 : validPct) / 8),
+                opacity: Math.min(1, ((isWeeklyExhausted || offline) ? 0 : validPct) / 8),
                 filter: videoFilter
               }}
             />
@@ -383,18 +355,18 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
 
         <svg className="orb-rings-svg" viewBox="0 0 200 200">
           <defs>
-            <filter id={`glow-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+            <filter id={`glow-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="4" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
             {hasSecondary && (
-              <filter id={`glow-sec-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+              <filter id={`glow-sec-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             )}
             {hasTertiary && (
-              <filter id={`glow-ter-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+              <filter id={`glow-ter-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="2.5" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
@@ -407,7 +379,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             opacity="0.9" strokeLinecap="round"
             strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
             transform="rotate(-90 100 100)"
-            filter={`url(#glow-${label.replace(/\s+/g, '-')})`}
+            filter={`url(#glow-${uid})`}
           />
           {hasSecondary ? (
             <>
@@ -418,7 +390,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 opacity="0.5" strokeLinecap="round"
                 strokeDasharray={circumferenceSec} strokeDashoffset={strokeDashoffsetSec}
                 transform="rotate(-90 100 100)"
-                filter={`url(#glow-sec-${label.replace(/\s+/g, '-')})`}
+                filter={`url(#glow-sec-${uid})`}
               />
             </>
           ) : (
@@ -433,7 +405,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 opacity="0.85" strokeLinecap="round"
                 strokeDasharray={circumferenceTer} strokeDashoffset={strokeDashoffsetTer}
                 transform="rotate(-90 100 100)"
-                filter={`url(#glow-ter-${label.replace(/\s+/g, '-')})`}
+                filter={`url(#glow-ter-${uid})`}
               />
             </>
           )}
@@ -449,12 +421,12 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               title={authFix.title}
             >{authFix.hint}</span>
           ) : (
-            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{offline ? "--:--:--" : isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
+            <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{offline ? "--:--:--" : isWeeklyExhausted && (timer === (t ? t.readyToGo : "READY TO GO") || timer === (t ? t.ready : "READY")) ? (t ? t.waitReset : "WAIT RESET") : timer}</span>
           )}
           {authFix || offline ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
           ) : null}
-          {authFix ? null : tertiaryTimer ? (
+          {authFix || offline ? null : tertiaryTimer ? (
             <span className="orb-timer-tertiary" style={{ color: tertiaryColor || '#c084fc', textShadow: `0 0 8px ${tertiaryColor || '#c084fc'}` }}>{tertiaryTimer}</span>
           ) : null}
         </div>
@@ -476,7 +448,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             title={authFix.title}
           >{authFix.cta}</p>
         ) : offline ? (
-          <p className="orb-subtitle orb-offline">{appName ? `OFFLINE · OPEN ${appName.toUpperCase()}` : 'OFFLINE'}</p>
+          <p className="orb-subtitle orb-offline">{t ? t.offlineOpenApp(appName) : (appName ? `OFFLINE · OPEN ${appName.toUpperCase()}` : 'OFFLINE')}</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
@@ -484,14 +456,14 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             {hasTertiary && (
               <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: tertiaryColor || '#c084fc', boxShadow: `0 0 6px ${tertiaryColor || '#c084fc'}` }} />{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
             )}
-            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">{t ? t.resetsLeft(resetCredits) : `↺ ${resetCredits} ${resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT`}</p>}
           </div>
         ) : (
           <>
             <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
             {/* Single-ring orbs (Grok) still show their plan line, without a fake second ring. */}
             {secondaryLabel && <p className="orb-subtitle orb-plan-label">{secondaryLabel}</p>}
-            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">{t ? t.resetsLeft(resetCredits) : `↺ ${resetCredits} ${resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT`}</p>}
           </>
         )}
       </div>
@@ -502,12 +474,65 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
 // Desktop app each orb opens (matches open_provider_app in src-tauri/src/lib.rs).
 const APP_NAMES = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity', grok: 'Grok Bot' };
 
+const readStoredNumber = (key, fallback) => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const parsed = JSON.parse(raw);
+    const n = Number(parsed);
+    return Number.isFinite(n) ? n : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 /* ── Widget App ── */
 function WidgetApp() {
   // Read which orb to display from URL params
   const params = new URLSearchParams(window.location.search);
   const orbType = params.get('orb') || 'claude';
-  const config = ORB_CONFIG[orbType] || ORB_CONFIG.claude;
+
+  const [lang, setLang] = useState(getInitialLang);
+  const [alertThreshold, setAlertThreshold] = useState(() => readStoredNumber('aipulse_alertThreshold', 20));
+  const [alertTimerMin, setAlertTimerMin] = useState(() => readStoredNumber('aipulse_alertTimerMin', 30));
+  const [labelVersion, setLabelVersion] = useState(0);
+
+  const t = useT(lang);
+  const orbLabels = getCustomOrbLabels(IS_APP_STORE, lang);
+  const configs = buildOrbConfig(orbLabels, t);
+  const config = configs[orbType] || configs.claude;
+
+  // Keep refs in sync so timer interval uses updated language/labels immediately.
+  const configRef = useRef(config);
+  configRef.current = config;
+
+  // Reload appearance/alert/language settings when changed in the main window.
+  useEffect(() => {
+    const syncFromStorage = () => {
+      setLang(getInitialLang());
+      setAlertThreshold(readStoredNumber('aipulse_alertThreshold', 20));
+      setAlertTimerMin(readStoredNumber('aipulse_alertTimerMin', 30));
+      setLabelVersion((v) => v + 1);
+    };
+    const onStorage = (e) => {
+      if (
+        !e.key ||
+        e.key === LANG_STORAGE_KEY ||
+        e.key === CUSTOM_LABELS_STORAGE_KEY ||
+        e.key === 'aipulse_alertThreshold' ||
+        e.key === 'aipulse_alertTimerMin'
+      ) {
+        syncFromStorage();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    const win = getCurrentWindow();
+    const unlistenPromise = win.listen('settings-changed', syncFromStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      unlistenPromise.then((fn) => fn()).catch(() => {});
+    };
+  }, []);
 
   const [data, setData] = useState({
     antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, rate_limit_pct_tertiary: 0, resetsAt: '', resetsAt_secondary: '', resetsAt_tertiary: '' },
@@ -533,42 +558,47 @@ function WidgetApp() {
   useEffect(() => {
     if (!backendUrl) return undefined;
     let es = null;
+    let retryTimer = null;
+    let cancelled = false;
     const connect = () => {
+      if (cancelled) return;
       es = new EventSource(`${backendUrl}/api/stream`);
       es.onmessage = (e) => {
         try { setData(JSON.parse(e.data)); } catch (err) {}
       };
       es.onerror = () => {
         es.close();
-        setTimeout(connect, 3000);
+        if (!cancelled) {
+          retryTimer = setTimeout(connect, 3000);
+        }
       };
     };
     connect();
-    return () => { if (es) es.close(); };
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (es) es.close();
+    };
   }, [backendUrl]);
 
-  // Timer tick
+  // Timer tick (also re-runs immediately on lang/labelVersion update)
   useEffect(() => {
+    setTimers(configRef.current.getTimers(dataRef.current));
     const id = setInterval(() => {
-      const t = config.getTimers(dataRef.current);
-      setTimers(t);
+      setTimers(configRef.current.getTimers(dataRef.current));
     }, 1000);
     return () => clearInterval(id);
-  }, [config]);
+  }, [orbType, lang, labelVersion]);
 
   const orbData = config.getData(data);
 
-  // ── Update-ready badge ──
-  // Most people barely reopen the main window once a widget is pinned to
-  // their desktop, so a Settings-only "restart to update" notice can go
-  // unseen for a long-running session. The main window broadcasts
-  // 'update-ready' (see App.jsx) once a downloaded update is waiting for a
-  // restart; every open widget picks it up independently.
+  // ── Update-ready badge (direct distribution only) ──
   const [updateReady, setUpdateReady] = useState(false);
   useEffect(() => {
+    if (IS_APP_STORE) return undefined;
     const win = getCurrentWindow();
     const p = win.listen('update-ready', () => setUpdateReady(true));
-    return () => { p.then(fn => fn()); };
+    return () => { p.then(fn => fn()).catch(() => {}); };
   }, []);
 
   const restartForUpdate = async (e) => {
@@ -583,12 +613,14 @@ function WidgetApp() {
   const [menu, setMenu] = useState(null);
   useEffect(() => {
     const close = () => setMenu(null);
+    const onKeyDown = (e) => { if (e.key === 'Escape') close(); };
     window.addEventListener('click', close);
     window.addEventListener('blur', close);
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('click', close);
       window.removeEventListener('blur', close);
+      window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
 
@@ -601,9 +633,13 @@ function WidgetApp() {
     getCurrentWindow().startDragging().catch(() => {});
   };
 
-  // Double-click the orb → launch this provider's desktop app
-  // (Claude.app / Codex.app / Antigravity.app).
+  // Double-click the orb → launch this provider's desktop app in direct mode,
+  // or bring back the main dashboard in App Store sandboxed mode.
   const openProviderApp = () => {
+    if (IS_APP_STORE) {
+      reopenMain();
+      return;
+    }
     invoke('open_provider_app', { provider: orbType }).catch(() => {});
   };
 
@@ -632,6 +668,8 @@ function WidgetApp() {
     getCurrentWindow().close().catch(() => {});
   };
 
+  const orbState = data[orbType];
+
   return (
     <div
       className="widget-container"
@@ -655,30 +693,31 @@ function WidgetApp() {
         primaryLabel={config.primaryLabel}
         secondaryLabel={orbData.secondaryLabel ?? config.secondaryLabel}
         tertiaryLabel={config.tertiaryLabel}
+        hasWeeklySecondary={!!config.hasWeeklySecondary}
         stackLabels={config.stackLabels}
         connected={true}
-        dataLoaded={!!data[orbType]?.loaded}
+        dataLoaded={!!orbState?.loaded}
         resetCredits={orbType === 'codex' && data.codex ? data.codex.reset_credits : null}
-        offline={!!data[orbType] && data[orbType].available === false}
-        appName={APP_NAMES[orbType]}
-        // Both Claude sources dead (browser cookie gone + read-only OAuth token
-        // expired). `stale` gates the mid-session case so a transient blip
-        // doesn't flash SIGN IN; `!loaded` covers cold start where `stale`
-        // can't be true yet (it's time-since-last-success, and there is none).
-        needsLogin={orbType === 'claude' && !!data.claude && !!data.claude.needsLogin && (!data.claude.loaded || !!data.claude.stale)}
+        offline={!!orbState && orbState.available === false && !orbState.needsSetup}
+        appName={IS_APP_STORE ? config.label : APP_NAMES[orbType]}
+        needsLogin={!IS_APP_STORE && orbType === 'claude' && !!data.claude && !!data.claude.needsLogin && (!data.claude.loaded || !!data.claude.stale)}
         onNeedsLogin={() => openUrl('https://claude.ai').catch(() => {})}
-        // macOS refused to open Chrome's cookie DB (EPERM) — needs Full Disk Access, not a login.
-        needsDiskAccess={orbType === 'claude' && !!data.claude && !!data.claude.needsDiskAccess && (!data.claude.loaded || !!data.claude.stale)}
+        needsDiskAccess={!IS_APP_STORE && orbType === 'claude' && !!data.claude && !!data.claude.needsDiskAccess && (!data.claude.loaded || !!data.claude.stale)}
         onNeedsDiskAccess={() => invoke('open_full_disk_access_settings').catch(() => {})}
+        needsSetup={!!orbState?.needsSetup}
+        onNeedsSetup={reopenMain}
+        criticalPctThreshold={alertThreshold}
+        criticalMinThreshold={alertTimerMin}
+        t={t}
         backendUrl={backendUrl}
       />
 
-      {updateReady && (
+      {!IS_APP_STORE && updateReady && (
         <button
           className="widget-update-badge"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={restartForUpdate}
-          title="Update ready — click to restart"
+          title={t.widgetRestartUpdate}
         />
       )}
 
@@ -688,9 +727,9 @@ function WidgetApp() {
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <button onClick={reopenMain}>⤢ Open dashboard</button>
-          {updateReady && <button onClick={restartForUpdate}>↻ Restart to update</button>}
-          <button className="danger" onClick={closeWidget}>✕ Close widget</button>
+          <button onClick={reopenMain}>{t.widgetOpenDashboard}</button>
+          {!IS_APP_STORE && updateReady && <button onClick={restartForUpdate}>{t.widgetRestartUpdate}</button>}
+          <button className="danger" onClick={closeWidget}>{t.widgetClose}</button>
         </div>
       )}
     </div>

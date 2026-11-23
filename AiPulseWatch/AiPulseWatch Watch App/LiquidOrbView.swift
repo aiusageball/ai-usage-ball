@@ -69,6 +69,7 @@ struct LiquidSprite: View {
 
 // MARK: - Main Orb View
 struct LiquidOrbView: View {
+    var atlasName: String
     var label: String
     var primaryPct: Double
     var secondaryPct: Double?
@@ -97,7 +98,7 @@ struct LiquidOrbView: View {
                 .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
 
             // 2. Real-video liquid (帧序列) — screen-blended, clipped to circle
-            LiquidSprite(atlasName: label.lowercased(), pct: animatedPrimary, isActive: isActive)
+            LiquidSprite(atlasName: atlasName, pct: animatedPrimary, isActive: isActive)
                 .clipShape(Circle().inset(by: 1))
 
             // 3. Inner depth shadow (matches .orb-inner-shadow: inset 0 -50px 80px black)

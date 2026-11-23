@@ -4,6 +4,19 @@ import { emit } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { eggBeginDrag, eggConsumeClickSuppress } from './easterEgg';
 import { resolveBackendUrl } from './backend';
+import {
+  IS_APP_STORE,
+  APP_VERSION,
+  CUSTOM_LABELS_STORAGE_KEY,
+  getDefaultOrbLabels,
+  getCustomOrbLabels,
+} from './config';
+import { LANG_STORAGE_KEY, getInitialLang, useT } from './i18n';
+import {
+  formatCountdownHMS,
+  formatClaudePrimaryCountdown,
+  formatCodexPrimaryCountdown,
+} from './utils/countdown';
 import './App.css';
 
 const TRIAL_DAYS = 30;
@@ -130,52 +143,6 @@ const launchWidget = async (orbName) => {
   });
 };
 
-const formatCountdownHMS = (resetsAtIso) => {
-  if (!resetsAtIso) return "READY";
-  try {
-    const resetDate = new Date(resetsAtIso);
-    const now = new Date();
-    const diffMs = resetDate - now;
-    if (diffMs <= 0) return "READY";
-    
-    const totalSecs = Math.floor(diffMs / 1000);
-    const secs = String(totalSecs % 60).padStart(2, '0');
-    const totalMins = Math.floor(totalSecs / 60);
-    const mins = String(totalMins % 60).padStart(2, '0');
-    const totalHours = Math.floor(totalMins / 60);
-    
-    if (totalHours > 72) {
-      const days = Math.floor(totalHours / 24);
-      const remHours = totalHours % 24;
-      return `${days}d:${String(remHours).padStart(2, '0')}:${mins}`;
-    }
-
-    const hours = String(totalHours).padStart(2, '0');
-    return `${hours}:${mins}:${secs}`;
-  } catch (e) {
-    return "READY";
-  }
-};
-
-const formatClaudePrimaryCountdown = (claude) => {
-  if (claude?.rate_limit_pct_secondary >= 100 || claude?.status_secondary === "EXHAUSTED") {
-    return "WAIT RESET";
-  }
-  return formatCountdownHMS(claude?.resetsAt);
-};
-
-// A fresh Codex five-hour window has no countdown until the first request is
-// made. The backend marks that state explicitly because the API still returns
-// a rolling reset_at timestamp while the window is idle.
-// When weekly quota is exhausted, the 5-hour window is unusable until weekly reset.
-const formatCodexPrimaryCountdown = (codex) => {
-  if (codex?.rate_limit_pct_secondary >= 100 || codex?.status_secondary === "EXHAUSTED") {
-    return "WAIT RESET";
-  }
-  if (codex?.primary_window_started === false) return "READY TO GO";
-  return formatCountdownHMS(codex?.resetsAt);
-};
-
 const parseManualPeerAddress = (value) => {
   const input = value.trim();
   if (!input) return null;
@@ -203,33 +170,136 @@ const parseManualPeerAddress = (value) => {
 
 const SettingsModal = ({
   onClose,
-  dataSource, setDataSource,
+  t,
+  lang, setLang,
+  backendUrl,
+  dataMode, setDataMode,
   alertThreshold, setAlertThreshold,
   alertTimerMin, setAlertTimerMin,
-  launchAtLogin, setLaunchAtLogin,
-  showInDock, setShowInDock,
-  theme, setTheme,
+  customTitles, setCustomTitles,
   autoUpdate, setAutoUpdate,
   teamSharingEnabled, setTeamSharingEnabled,
   teamDisplayName, setTeamDisplayName,
   updateState, updateInfo, updateProgress, onCheckForUpdates, onRestartNow,
-  licensed, daysLeft, onActivate, checkoutUrl
+  licensed, daysLeft, onActivate, checkoutUrl,
+  onResetAll,
+  initialTab = null,
 }) => {
-  const [activeTab, setActiveTab] = useState('account');
+  const defaultTab = initialTab || (IS_APP_STORE ? 'datasource' : 'account');
+  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [credForm, setCredForm] = useState({
+    claude_token: '',
+    claude_session_key: '',
+    codex_token: '',
+    codex_account_id: '',
+    antigravity_port: '',
+    antigravity_csrf: '',
+    grok_manual_pct: '',
+  });
+  const [credFlags, setCredFlags] = useState({});
+  const [saveStatus, setSaveStatus] = useState('');
+  const [savingCreds, setSavingCreds] = useState(false);
+  const [activatingLicense, setActivatingLicense] = useState(false);
+
+  useEffect(() => {
+    if (!backendUrl) return;
+    fetch(`${backendUrl}/api/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg) => {
+        if (!cfg) return;
+        if (cfg.data_mode) setDataMode(cfg.data_mode);
+        setCredFlags(cfg.configured || {});
+        if (cfg.antigravity_port) {
+          setCredForm((prev) => ({ ...prev, antigravity_port: String(cfg.antigravity_port) }));
+        }
+        if (cfg.grok_manual_pct != null) {
+          setCredForm((prev) => ({ ...prev, grok_manual_pct: String(cfg.grok_manual_pct) }));
+        }
+      })
+      .catch(() => {});
+  }, [backendUrl]);
+
+  const applyDataMode = async (mode) => {
+    setDataMode(mode);
+    setSaveStatus('');
+    if (!backendUrl) return;
+    try {
+      await fetch(`${backendUrl}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data_mode: mode }),
+      });
+    } catch {
+      // ignore transient error
+    }
+  };
+
+  const handleSaveCredentials = async () => {
+    if (!backendUrl) {
+      setSaveStatus(t.credentialsSaveFailed);
+      return;
+    }
+    setSavingCreds(true);
+    setSaveStatus('');
+    try {
+      const payload = { data_mode: dataMode };
+      if (credForm.claude_token.trim()) payload.claude_token = credForm.claude_token.trim();
+      if (credForm.claude_session_key.trim()) payload.claude_session_key = credForm.claude_session_key.trim();
+      if (credForm.codex_token.trim()) payload.codex_token = credForm.codex_token.trim();
+      if (credForm.codex_account_id.trim()) payload.codex_account_id = credForm.codex_account_id.trim();
+      if (credForm.antigravity_port !== '') {
+        const portNum = parseInt(credForm.antigravity_port, 10);
+        if (Number.isInteger(portNum) && portNum > 0) payload.antigravity_port = String(portNum);
+      } else {
+        payload.antigravity_port = '';
+      }
+      if (credForm.antigravity_csrf.trim()) payload.antigravity_csrf = credForm.antigravity_csrf.trim();
+      if (credForm.grok_manual_pct !== '') {
+        const pctNum = parseFloat(credForm.grok_manual_pct);
+        if (Number.isFinite(pctNum)) payload.grok_manual_pct = String(Math.max(0, Math.min(100, pctNum)));
+      } else {
+        payload.grok_manual_pct = '';
+      }
+
+      const res = await fetch(`${backendUrl}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('save failed');
+      const updated = await res.json();
+      setCredFlags(updated.configured || {});
+      setCredForm((prev) => ({
+        ...prev,
+        claude_token: '',
+        claude_session_key: '',
+        codex_token: '',
+        codex_account_id: '',
+        antigravity_csrf: '',
+      }));
+      setSaveStatus(t.credentialsSaved);
+    } catch {
+      setSaveStatus(t.credentialsSaveFailed);
+    } finally {
+      setSavingCreds(false);
+    }
+  };
 
   const tabs = [
-    { id: 'account', label: 'ACCOUNT', icon: '👤' },
-    { id: 'datasource', label: 'DATA SOURCE', icon: '🔗' },
-    { id: 'alerts', label: 'ALERTS', icon: '🔔' },
-    { id: 'appearance', label: 'APPEARANCE', icon: '🎨' },
-    { id: 'general', label: 'GENERAL', icon: '⚙️' },
+    ...(!IS_APP_STORE ? [{ id: 'account', label: t.tabAccount, icon: '👤' }] : []),
+    { id: 'datasource', label: t.tabDatasource, icon: '🔗' },
+    { id: 'alerts', label: t.tabAlerts, icon: '🔔' },
+    { id: 'appearance', label: t.tabAppearance, icon: '🎨' },
+    { id: 'general', label: t.tabGeneral, icon: '⚙️' },
   ];
+
+  const defaultLabels = getDefaultOrbLabels(IS_APP_STORE, lang);
 
   return (
     <div className="settings-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="settings-modal-content">
         <div className="settings-header">
-          <h2>SETTINGS</h2>
+          <h2>{t.settingsTitle}</h2>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
 
@@ -249,20 +319,20 @@ const SettingsModal = ({
 
         <div className="settings-body" style={{ paddingBottom: '40px' }}>
 
-          {/* ── Account Tab ── */}
-          {activeTab === 'account' && (
+          {/* ── Account Tab (Direct distribution only) ── */}
+          {!IS_APP_STORE && activeTab === 'account' && (
             <div className="settings-tab-content">
               <div className="setting-section">
-                <h3 className="section-title">Current Plan</h3>
+                <h3 className="section-title">{t.currentPlan}</h3>
                 {licensed ? (
                   <>
-                    <div className="plan-badge pro-active" style={{ background: 'rgba(0, 255, 170, 0.1)', color: '#00ffaa', borderColor: 'rgba(0, 255, 170, 0.3)' }}>PRO · UNLOCKED</div>
-                    <p className="section-desc">Thanks for your support — all features unlocked.</p>
+                    <div className="plan-badge pro-active" style={{ background: 'rgba(0, 255, 170, 0.1)', color: '#00ffaa', borderColor: 'rgba(0, 255, 170, 0.3)' }}>{t.proUnlocked}</div>
+                    <p className="section-desc">{t.proUnlockedDesc}</p>
                   </>
                 ) : (
                   <>
-                    <div className="plan-badge">FREE TRIAL</div>
-                    <p className="section-desc">{daysLeft != null ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} left in your free trial.` : 'Free trial.'}</p>
+                    <div className="plan-badge">{t.freeTrialBadge}</div>
+                    <p className="section-desc">{t.trialDaysLeftDesc(daysLeft)}</p>
                   </>
                 )}
               </div>
@@ -270,54 +340,57 @@ const SettingsModal = ({
               {!licensed ? (
                 <>
                   <div className="setting-section">
-                    <h3 className="section-title">Unlock forever — trial price</h3>
+                    <h3 className="section-title">{t.unlockForever}</h3>
                     <button
                       className="upgrade-card pro"
                       style={{ textAlign: 'left', width: '100%' }}
                       onClick={() => openUrl(checkoutUrl)}
                     >
-                      <span className="plan-name">⚡ AI Usage Ball Pro</span>
-                      <span className="plan-price"><s style={{ opacity: 0.45, fontWeight: 'normal', marginRight: '6px' }}>A$9.99</s>A$5.99<small> one-time</small></span>
-                      <span className="plan-feat" style={{ display: 'block', opacity: 0.8, fontSize: '11px', marginTop: '6px' }}>Desktop orbs · Apple Watch · Custom alerts · Themes</span>
+                      <span className="plan-name">{t.proName}</span>
+                      <span className="plan-price"><s style={{ opacity: 0.45, fontWeight: 'normal', marginRight: '6px' }}>A$9.99</s>A$5.99<small>{t.proOneTime}</small></span>
+                      <span className="plan-feat" style={{ display: 'block', opacity: 0.8, fontSize: '11px', marginTop: '6px' }}>{t.proFeatures}</span>
                       <div style={{ marginTop: '12px', padding: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold' }}>
-                        Lock in A$5.99 before trial ends ↗
+                        {t.lockInTrial}
                       </div>
                     </button>
                   </div>
 
                   <div className="setting-section">
-                    <div className="section-divider"><span>or activate</span></div>
-                    <h3 className="section-title" style={{ marginTop: '16px' }}>Have a license key?</h3>
+                    <div className="section-divider"><span>{t.orActivate}</span></div>
+                    <h3 className="section-title" style={{ marginTop: '16px' }}>{t.haveLicenseKey}</h3>
                     <div className="license-input-group" style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
                       <input
                         type="text"
-                        placeholder="Paste your license key"
+                        placeholder={t.pasteLicenseKey}
                         style={{ flex: 1, minWidth: '200px', padding: '10px 12px', borderRadius: '6px', border: '1px solid #333', background: '#111', color: '#fff', fontFamily: 'monospace' }}
                         id="settingsLicenseKey"
                       />
                       <button
                         className="theme-btn"
-                        style={{ padding: '0 20px', background: '#333', color: '#fff', whiteSpace: 'nowrap' }}
-                        onClick={async (e) => {
-                          const btn = e.currentTarget;
-                          btn.innerHTML = 'Verifying...';
-                          btn.style.opacity = '0.7';
-                          const ok = await onActivate(document.getElementById('settingsLicenseKey').value);
-                          if (!ok) { btn.innerHTML = 'Activate'; btn.style.opacity = '1'; alert('Invalid license key'); }
+                        disabled={activatingLicense}
+                        style={{ padding: '0 20px', background: '#333', color: '#fff', whiteSpace: 'nowrap', opacity: activatingLicense ? 0.7 : 1 }}
+                        onClick={async () => {
+                          setActivatingLicense(true);
+                          try {
+                            const ok = await onActivate(document.getElementById('settingsLicenseKey').value);
+                            if (!ok) alert(t.invalidLicense);
+                          } finally {
+                            setActivatingLicense(false);
+                          }
                         }}
                       >
-                        Activate
+                        {activatingLicense ? t.verifyingBtn : t.activateBtn}
                       </button>
                     </div>
-                    <p className="section-desc" style={{ marginTop: '8px', fontSize: '12px' }}>The key emailed to you after purchase.</p>
+                    <p className="section-desc" style={{ marginTop: '8px', fontSize: '12px' }}>{t.licenseKeyHelp}</p>
                   </div>
                 </>
               ) : (
                 <div className="setting-section">
                   <div style={{ padding: '20px', background: 'rgba(0, 255, 170, 0.05)', border: '1px solid rgba(0, 255, 170, 0.2)', borderRadius: '12px', textAlign: 'center' }}>
                     <div style={{ fontSize: '32px', marginBottom: '8px' }}>🎉</div>
-                    <h3 style={{ margin: '0 0 8px 0', color: '#fff' }}>Thank you for your support!</h3>
-                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>All features unlocked. Your Apple Watch companion is ready to sync.</p>
+                    <h3 style={{ margin: '0 0 8px 0', color: '#fff' }}>{t.thankYouTitle}</h3>
+                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>{t.thankYouWatchDesc}</p>
                   </div>
                 </div>
               )}
@@ -328,42 +401,128 @@ const SettingsModal = ({
           {activeTab === 'datasource' && (
             <div className="settings-tab-content">
               <div className="setting-section">
-                <h3 className="section-title">Data Collection Method</h3>
-                <p className="section-desc">Choose how AI Pulse reads your usage data</p>
+                <h3 className="section-title">{t.dataCollectionMethod}</h3>
+                <p className="section-desc">{t.dataCollectionDesc}</p>
 
                 <div className="radio-group">
-                  <label className={`radio-option ${dataSource === 'codexbar' ? 'selected' : ''}`}>
-                    <input type="radio" name="datasource" value="codexbar" checked={dataSource === 'codexbar'} onChange={(e) => setDataSource(e.target.value)} />
+                  {!IS_APP_STORE && (
+                    <label className={`radio-option ${dataMode === 'auto' ? 'selected' : ''}`}>
+                      <input type="radio" name="datasource" value="auto" checked={dataMode === 'auto'} onChange={() => applyDataMode('auto')} />
+                      <div className="radio-content">
+                        <span className="radio-title">⚡ {t.modeAutoTitle}</span>
+                        <span className="radio-desc">{t.modeAutoDesc}</span>
+                      </div>
+                    </label>
+                  )}
+
+                  <label className={`radio-option ${dataMode === 'demo' ? 'selected' : ''}`}>
+                    <input type="radio" name="datasource" value="demo" checked={dataMode === 'demo'} onChange={() => applyDataMode('demo')} />
                     <div className="radio-content">
-                      <span className="radio-title">🍪 CodexBar / Cookie Mode</span>
-                      <span className="radio-desc">Automatically reads usage from browser cookies (default, no setup needed)</span>
+                      <span className="radio-title">✨ {t.modeDemoTitle}</span>
+                      <span className="radio-desc">{t.modeDemoDesc}</span>
                     </div>
                   </label>
 
-                  <label className={`radio-option ${dataSource === 'apikey' ? 'selected' : ''}`}>
-                    <input type="radio" name="datasource" value="apikey" checked={dataSource === 'apikey'} onChange={(e) => setDataSource(e.target.value)} />
+                  <label className={`radio-option ${dataMode === 'manual' ? 'selected' : ''}`}>
+                    <input type="radio" name="datasource" value="manual" checked={dataMode === 'manual'} onChange={() => applyDataMode('manual')} />
                     <div className="radio-content">
-                      <span className="radio-title">🔑 API Key Mode</span>
-                      <span className="radio-desc">Enter your provider API keys for direct access</span>
+                      <span className="radio-title">🔑 {t.modeManualTitle}</span>
+                      <span className="radio-desc">{t.modeManualDesc}</span>
                     </div>
                   </label>
                 </div>
               </div>
 
-              {dataSource === 'apikey' && (
+              {dataMode === 'manual' && (
                 <div className="setting-section">
-                  <h3 className="section-title">API Keys</h3>
+                  <h3 className="section-title">{t.manualCredentialsTitle}</h3>
                   <div className="setting-group">
-                    <label>Anthropic API Key</label>
-                    <input type="password" placeholder="sk-ant-..." className="ando-input" />
+                    <label>
+                      {t.manualChannel1Token} {credFlags.claude_token ? `(${t.configuredTag})` : ''}
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={credFlags.claude_token ? '••••••••' : 'sk-ant-oat01-...'}
+                      className="ando-input"
+                      value={credForm.claude_token}
+                      onChange={(e) => setCredForm({ ...credForm, claude_token: e.target.value })}
+                    />
                   </div>
                   <div className="setting-group">
-                    <label>OpenAI API Key</label>
-                    <input type="password" placeholder="sk-..." className="ando-input" />
+                    <label>
+                      {t.manualChannel1Session} {credFlags.claude_session_key ? `(${t.configuredTag})` : ''}
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={credFlags.claude_session_key ? '••••••••' : 'sk-ant-sid01-...'}
+                      className="ando-input"
+                      value={credForm.claude_session_key}
+                      onChange={(e) => setCredForm({ ...credForm, claude_session_key: e.target.value })}
+                    />
                   </div>
                   <div className="setting-group">
-                    <label>Google AI API Key</label>
-                    <input type="password" placeholder="AIza..." className="ando-input" />
+                    <label>
+                      {t.manualChannel2Token} {credFlags.codex_token ? `(${t.configuredTag})` : ''}
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={credFlags.codex_token ? '••••••••' : 'eyJ...'}
+                      className="ando-input"
+                      value={credForm.codex_token}
+                      onChange={(e) => setCredForm({ ...credForm, codex_token: e.target.value })}
+                    />
+                  </div>
+                  <div className="setting-group">
+                    <label>
+                      {t.manualChannel2Account} {credFlags.codex_account_id ? `(${t.configuredTag})` : ''}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="acct_..."
+                      className="ando-input"
+                      value={credForm.codex_account_id}
+                      onChange={(e) => setCredForm({ ...credForm, codex_account_id: e.target.value })}
+                    />
+                  </div>
+                  <div className="setting-group">
+                    <label>{t.manualChannel3Port}</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 52341"
+                      className="ando-input"
+                      value={credForm.antigravity_port}
+                      onChange={(e) => setCredForm({ ...credForm, antigravity_port: e.target.value })}
+                    />
+                  </div>
+                  <div className="setting-group">
+                    <label>
+                      {t.manualChannel3Csrf} {credFlags.antigravity_csrf ? `(${t.configuredTag})` : ''}
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={credFlags.antigravity_csrf ? '••••••••' : 'csrf token'}
+                      className="ando-input"
+                      value={credForm.antigravity_csrf}
+                      onChange={(e) => setCredForm({ ...credForm, antigravity_csrf: e.target.value })}
+                    />
+                  </div>
+                  <div className="setting-group">
+                    <label>{t.manualChannel4Pct}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="0 - 100"
+                      className="ando-input"
+                      value={credForm.grok_manual_pct}
+                      onChange={(e) => setCredForm({ ...credForm, grok_manual_pct: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
+                    <button className="ando-btn" disabled={savingCreds} onClick={handleSaveCredentials}>
+                      {savingCreds ? t.savingCredentials : t.saveCredentials}
+                    </button>
+                    {saveStatus && <span className="section-desc" style={{ color: '#4ade80' }}>{saveStatus}</span>}
                   </div>
                 </div>
               )}
@@ -374,44 +533,28 @@ const SettingsModal = ({
           {activeTab === 'alerts' && (
             <div className="settings-tab-content">
               <div className="setting-section">
-                <h3 className="section-title">Usage Alerts</h3>
+                <h3 className="section-title">{t.usageAlerts}</h3>
                 <div className="setting-group">
-                  <label>Alert when remaining quota below</label>
+                  <label>{t.alertBelowLabel}</label>
                   <div className="slider-row">
-                    <input type="range" min="5" max="50" value={alertThreshold} onChange={(e) => setAlertThreshold(e.target.value)} className="ando-slider" />
+                    <input type="range" min="5" max="50" value={alertThreshold} onChange={(e) => setAlertThreshold(Number(e.target.value))} className="ando-slider" />
                     <span className="slider-value">{alertThreshold}%</span>
                   </div>
                 </div>
               </div>
 
               <div className="setting-section">
-                <h3 className="section-title">Timer Alerts</h3>
+                <h3 className="section-title">{t.timerAlerts}</h3>
                 <div className="setting-group">
-                  <label>Alert when reset timer under</label>
+                  <label>{t.alertTimerLabel}</label>
                   <div className="slider-row">
-                    <input type="range" min="5" max="120" step="5" value={alertTimerMin} onChange={(e) => setAlertTimerMin(e.target.value)} className="ando-slider" />
-                    <span className="slider-value">{alertTimerMin} min</span>
+                    <input type="range" min="5" max="120" step="5" value={alertTimerMin} onChange={(e) => setAlertTimerMin(Number(e.target.value))} className="ando-slider" />
+                    <span className="slider-value">{alertTimerMin} {t.minutesUnit}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="setting-section">
-                <h3 className="section-title">Notification Style</h3>
-                <div className="checkbox-group">
-                  <label className="checkbox-option">
-                    <input type="checkbox" defaultChecked />
-                    <span>macOS system notifications</span>
-                  </label>
-                  <label className="checkbox-option">
-                    <input type="checkbox" defaultChecked />
-                    <span>Menu bar icon color change</span>
-                  </label>
-                  <label className="checkbox-option">
-                    <input type="checkbox" />
-                    <span>Sound alert</span>
-                  </label>
-                </div>
-              </div>
+              <p className="section-desc">{t.alertsActiveNote}</p>
             </div>
           )}
 
@@ -419,32 +562,60 @@ const SettingsModal = ({
           {activeTab === 'appearance' && (
             <div className="settings-tab-content">
               <div className="setting-section">
-                <h3 className="section-title">Theme</h3>
-                <div className="theme-options">
-                  <button className={`theme-btn ${theme === 'dark' ? 'active' : ''}`} onClick={() => setTheme('dark')}>
-                    <span className="theme-preview dark-preview"></span>
-                    <span>Dark</span>
-                  </button>
-                  <button className={`theme-btn ${theme === 'light' ? 'active' : ''}`} onClick={() => setTheme('light')}>
-                    <span className="theme-preview light-preview"></span>
-                    <span>Light</span>
-                  </button>
-                  <button className={`theme-btn ${theme === 'auto' ? 'active' : ''}`} onClick={() => setTheme('auto')}>
-                    <span className="theme-preview auto-preview"></span>
-                    <span>System</span>
-                  </button>
-                </div>
-              </div>
+                <h3 className="section-title">{t.customOrbLabels}</h3>
+                <p className="section-desc">{t.customOrbLabelsDesc}</p>
 
-              <div className="setting-section">
-                <h3 className="section-title">Orb Style</h3>
-                <p className="section-desc">Customize the liquid animation appearance</p>
                 <div className="setting-group">
-                  <label>Animation Speed</label>
-                  <div className="slider-row">
-                    <input type="range" min="0" max="200" defaultValue="100" className="ando-slider" />
-                    <span className="slider-value">100%</span>
-                  </div>
+                  <label>{t.orbLabelSlot1}</label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    className="ando-input"
+                    placeholder={defaultLabels.claude.title}
+                    value={customTitles.claude || ''}
+                    onChange={(e) => setCustomTitles({ ...customTitles, claude: e.target.value })}
+                  />
+                </div>
+                <div className="setting-group">
+                  <label>{t.orbLabelSlot2}</label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    className="ando-input"
+                    placeholder={defaultLabels.codex.title}
+                    value={customTitles.codex || ''}
+                    onChange={(e) => setCustomTitles({ ...customTitles, codex: e.target.value })}
+                  />
+                </div>
+                <div className="setting-group">
+                  <label>{t.orbLabelSlot3}</label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    className="ando-input"
+                    placeholder={defaultLabels.antigravity.title}
+                    value={customTitles.antigravity || ''}
+                    onChange={(e) => setCustomTitles({ ...customTitles, antigravity: e.target.value })}
+                  />
+                </div>
+                <div className="setting-group">
+                  <label>{t.orbLabelSlot4}</label>
+                  <input
+                    type="text"
+                    maxLength={24}
+                    className="ando-input"
+                    placeholder={defaultLabels.grok.title}
+                    value={customTitles.grok || ''}
+                    onChange={(e) => setCustomTitles({ ...customTitles, grok: e.target.value })}
+                  />
+                </div>
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    className="ando-btn"
+                    onClick={() => setCustomTitles({ claude: '', codex: '', antigravity: '', grok: '' })}
+                  >
+                    {t.resetDefaultLabels}
+                  </button>
                 </div>
               </div>
             </div>
@@ -454,98 +625,86 @@ const SettingsModal = ({
           {activeTab === 'general' && (
             <div className="settings-tab-content">
               <div className="setting-section">
-                <h3 className="section-title">Startup</h3>
-                <div className="checkbox-group">
-                  <label className="checkbox-option">
-                    <input type="checkbox" checked={launchAtLogin} onChange={(e) => setLaunchAtLogin(e.target.checked)} />
-                    <span>Launch AI Pulse at login</span>
-                  </label>
-                  <label className="checkbox-option">
-                    <input type="checkbox" checked={showInDock} onChange={(e) => setShowInDock(e.target.checked)} />
-                    <span>Show in Dock</span>
-                  </label>
+                <h3 className="section-title">{t.languageTitle}</h3>
+                <p className="section-desc">{t.languageDesc}</p>
+                <div className="theme-options" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                  <button className={`theme-btn ${lang === 'zh' ? 'active' : ''}`} onClick={() => setLang('zh')}>
+                    <span>{t.langZh}</span>
+                  </button>
+                  <button className={`theme-btn ${lang === 'en' ? 'active' : ''}`} onClick={() => setLang('en')}>
+                    <span>{t.langEn}</span>
+                  </button>
                 </div>
               </div>
 
               <div className="setting-section">
-                <h3 className="section-title">Data</h3>
-                <div className="setting-group">
-                  <label>Refresh Interval</label>
-                  <select className="ando-input" defaultValue="5">
-                    <option value="1">Every 1 second</option>
-                    <option value="5">Every 5 seconds</option>
-                    <option value="15">Every 15 seconds</option>
-                    <option value="30">Every 30 seconds</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="setting-section">
-                <h3 className="section-title">Team View</h3>
+                <h3 className="section-title">{t.teamViewTitle}</h3>
                 <div className="checkbox-group">
                   <label className="checkbox-option">
                     <input type="checkbox" checked={teamSharingEnabled} onChange={(e) => setTeamSharingEnabled(e.target.checked)} />
-                    <span>Share my usage with teammates on this network</span>
+                    <span>{t.teamSharingLabel}</span>
                   </label>
                 </div>
                 <p className="section-desc" style={{ marginTop: '4px' }}>
-                  Opt-in and local-network only — this exposes your remaining % (nothing else) to other devices on the same WiFi, never to a server.
+                  {t.teamSharingDesc}
                 </p>
                 {teamSharingEnabled && (
                   <div className="setting-group" style={{ marginTop: '10px' }}>
-                    <label>Your name (shown to teammates)</label>
+                    <label>{t.teamYourNameLabel}</label>
                     <input
                       className="ando-input"
                       type="text"
                       maxLength={40}
                       value={teamDisplayName}
-                      placeholder="e.g. Ben"
+                      placeholder={t.teamYourNamePlaceholder}
                       onChange={(e) => setTeamDisplayName(e.target.value)}
                     />
                   </div>
                 )}
               </div>
 
-              <div className="setting-section">
-                <h3 className="section-title">Updates</h3>
-                <div className="checkbox-group">
-                  <label className="checkbox-option">
-                    <input type="checkbox" checked={autoUpdate} onChange={(e) => setAutoUpdate(e.target.checked)} />
-                    <span>Automatically check for and install updates</span>
-                  </label>
+              {!IS_APP_STORE && (
+                <div className="setting-section">
+                  <h3 className="section-title">{t.updatesTitle}</h3>
+                  <div className="checkbox-group">
+                    <label className="checkbox-option">
+                      <input type="checkbox" checked={autoUpdate} onChange={(e) => setAutoUpdate(e.target.checked)} />
+                      <span>{t.autoUpdateLabel}</span>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                    <button
+                      className="ando-btn"
+                      disabled={updateState === 'checking' || updateState === 'downloading'}
+                      onClick={() => onCheckForUpdates(true)}
+                    >
+                      {updateState === 'checking' ? t.checkingUpdates : updateState === 'downloading' ? t.downloadingUpdates : t.checkForUpdates}
+                    </button>
+                    {updateState === 'ready' && (
+                      <button className="ando-btn" onClick={onRestartNow}>{t.restartNow}</button>
+                    )}
+                  </div>
+                  <p className="section-desc" style={{ marginTop: '8px' }}>
+                    {updateState === 'idle' && t.updateIdle}
+                    {updateState === 'checking' && t.updateChecking}
+                    {updateState === 'uptodate' && t.updateUpToDate}
+                    {updateState === 'available' && updateInfo && t.updateAvailable(updateInfo.version)}
+                    {updateState === 'downloading' && t.updateDownloading(updateProgress)}
+                    {updateState === 'ready' && updateInfo && t.updateReady(updateInfo.version)}
+                    {updateState === 'error' && t.updateError}
+                  </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
-                  <button
-                    className="ando-btn"
-                    disabled={updateState === 'checking' || updateState === 'downloading'}
-                    onClick={() => onCheckForUpdates(true)}
-                  >
-                    {updateState === 'checking' ? 'CHECKING…' : updateState === 'downloading' ? 'DOWNLOADING…' : 'CHECK FOR UPDATES'}
-                  </button>
-                  {updateState === 'ready' && (
-                    <button className="ando-btn" onClick={onRestartNow}>RESTART NOW</button>
-                  )}
-                </div>
-                <p className="section-desc" style={{ marginTop: '8px' }}>
-                  {updateState === 'idle' && 'Not checked yet this session.'}
-                  {updateState === 'checking' && 'Checking for updates…'}
-                  {updateState === 'uptodate' && "You're up to date."}
-                  {updateState === 'available' && updateInfo && `Update ${updateInfo.version} available — downloading…`}
-                  {updateState === 'downloading' && `Downloading update… ${updateProgress}%`}
-                  {updateState === 'ready' && updateInfo && `Update ${updateInfo.version} downloaded — restart to apply.`}
-                  {updateState === 'error' && "Couldn't check for updates — try again later."}
-                </p>
-              </div>
+              )}
 
               <div className="setting-section">
-                <h3 className="section-title">About</h3>
-                <p className="section-desc">AI Usage Ball v0.3.4</p>
-                <p className="section-desc" style={{ opacity: 0.5 }}>Built with Tauri + React</p>
+                <h3 className="section-title">{t.aboutTitle}</h3>
+                <p className="section-desc">{t.aboutVersion(APP_VERSION)}</p>
+                <p className="section-desc" style={{ opacity: 0.5 }}>{t.aboutBuiltWith}</p>
               </div>
 
               <div className="settings-footer">
-                <button className="ando-btn danger" onClick={onClose}>Reset All Settings</button>
-                <button className="ando-btn" onClick={onClose}>SAVE</button>
+                <button className="ando-btn danger" onClick={onResetAll}>{t.resetAllSettings}</button>
+                <button className="ando-btn" onClick={onClose}>{t.doneBtn}</button>
               </div>
             </div>
           )}
@@ -555,19 +714,21 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, stackLabels = false, videoFilter, connected, onPopOut, offline = false, appName = null, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, backendUrl = null }) => {
+const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, hasWeeklySecondary = false, stackLabels = false, videoFilter, onPopOut, offline = false, appName = null, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, needsSetup = false, onNeedsSetup = null, criticalPctThreshold = 20, criticalMinThreshold = 30, t = null, backendUrl = null }) => {
   // Which "fix it" prompt to show in place of the countdown, if any. Disk
   // access wins over login: when macOS refuses to open Chrome's cookie DB,
   // logging in can't help, so telling the user to do it is actively wrong.
-  const authFix = needsDiskAccess
-    ? { hint: 'GRANT ACCESS', cls: 'orb-login-hint long', cta: '⚠ ALLOW FULL DISK ACCESS', on: onNeedsDiskAccess, title: 'Open System Settings › Privacy & Security › Full Disk Access' }
-    : needsLogin
-      ? { hint: 'SIGN IN', cls: 'orb-login-hint', cta: '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: 'Open claude.ai to sign in' }
-      : null;
+  const authFix = needsSetup
+    ? { hint: t ? t.setupHint : 'SETUP', cls: 'orb-login-hint', cta: t ? t.setupCta : '⚙ CONFIGURE IN SETTINGS', on: onNeedsSetup, title: t ? t.setupTitle : 'Open Settings › Data Source' }
+    : (!IS_APP_STORE && needsDiskAccess)
+      ? { hint: t ? t.grantAccessHint : 'GRANT ACCESS', cls: 'orb-login-hint long', cta: t ? t.grantAccessCta : '⚠ ALLOW FULL DISK ACCESS', on: onNeedsDiskAccess, title: t ? t.grantAccessTitle : 'Open System Settings › Privacy & Security › Full Disk Access' }
+      : (!IS_APP_STORE && needsLogin)
+        ? { hint: t ? t.signInHint : 'SIGN IN', cls: 'orb-login-hint', cta: t ? t.signInCta : '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: t ? t.signInTitle : 'Open claude.ai to sign in' }
+        : null;
   const hasSecondary = secondaryPercentage !== undefined;
   const hasTertiary = tertiaryPercentage !== undefined;
 
-  const isWeeklySecondary = secondaryLabel === "WEEKLY REMAINING";
+  const isWeeklySecondary = hasWeeklySecondary || secondaryLabel === "WEEKLY REMAINING";
   const rawPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
   const isWeeklyExhausted = hasSecondary && isWeeklySecondary && rawPctSec <= 0;
 
@@ -578,64 +739,97 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   const strokeW = hasTertiary ? 7 : 8;
   const circumference = 2 * Math.PI * radius;
   const validPct = isWeeklyExhausted ? 0 : Math.max(0, Math.min(100, percentage));
-  const strokeDashoffset = circumference - (circumference * validPct) / 100;
 
   const radiusSec = hasTertiary ? 56 : 47;
   const strokeWSec = hasTertiary ? 5.5 : 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
   const validPctSec = rawPctSec;
-  const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * validPctSec) / 100;
 
   const radiusTer = 43;
   const strokeWTer = 4.5;
   const circumferenceTer = 2 * Math.PI * radiusTer;
   const validPctTer = hasTertiary ? Math.max(0, Math.min(100, tertiaryPercentage)) : 0;
-  const strokeDashoffsetTer = circumferenceTer - (circumferenceTer * validPctTer) / 100;
 
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
   const loadedOnceRef = useRef(false);
   const orbGlassRef = useRef(null);   // 彩蛋:无绳弹弓需要球体的真实屏幕位置
+  const uid = React.useId().replace(/:/g, '');
 
-  const isTimerCritical = (t) => {
-    if (!t || t === "00:00:00" || !t.includes(':')) return false;
-    const parts = t.split(':');
-    if (parts.length === 3) {
+  const isTimerCritical = (timerStr) => {
+    if (!timerStr || timerStr === "00:00:00" || !timerStr.includes(':')) return false;
+    const parts = timerStr.split(':');
+    if (parts.length === 3 && !parts[0].includes('d')) {
       const h = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10);
-      return h === 0 && m < 30;
+      if (Number.isFinite(h) && Number.isFinite(m)) {
+        const totalMins = h * 60 + m;
+        return totalMins < criticalMinThreshold;
+      }
     }
     return false;
   };
 
-  const isCritical = validPct < 10 || (hasSecondary && validPctSec < 10) || (hasTertiary && validPctTer < 10) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
+  const isCritical = validPct < criticalPctThreshold || (hasSecondary && validPctSec < criticalPctThreshold) || (hasTertiary && validPctTer < criticalPctThreshold) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
   const isCriticalRef = useRef(isCritical);
   isCriticalRef.current = isCritical;
 
-  const rotationRef = useRef(Math.floor(Math.random() * 360));
-
-  // Liquid animation: manual seek-driven playback.
-  // WKWebView (Tauri production) blocks video.play() without a click gesture,
-  // so we never call play(). Instead, we keep the video paused and manually
-  // advance currentTime on each rAF tick. This is autoplay-policy-immune.
-  const rAFRef = useRef(null);
-  const lastTimeRef = useRef(null);
+  // Liquid animation: native playback + demand-driven easing timer (0% JS CPU when idle).
+  const lastReloadRef = useRef(0);
   const baseSpeedRef = useRef(0.8 + Math.random() * 0.4);
   const hoveringRef = useRef(false);
   const lingerTimerRef = useRef(null);
   const burstTimerRef = useRef(null);
+  const easeTimerRef = useRef(null);
   const ambientPulseRef = useRef(ambientPulse);
   const targetSpeedRef = useRef(isCritical ? baseSpeedRef.current : 0);
   const currentSpeedRef = useRef(isCritical ? baseSpeedRef.current : 0);
 
+  const applyPlayback = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    const spd = currentSpeedRef.current;
+    if (spd > 0.05) {
+      try { v.playbackRate = Math.max(0.25, Math.min(2, spd)); } catch (e) {}
+      if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+    } else if (!v.paused) {
+      try { v.pause(); } catch (e) {}
+    }
+  };
+
+  const ensureEaseLoop = () => {
+    if (easeTimerRef.current) return;
+    const vid = videoRef.current;
+    if (vid && (vid.error || vid.readyState === 0) && Date.now() - lastReloadRef.current > 15000) {
+      lastReloadRef.current = Date.now();
+      try { vid.load(); } catch (e) {}
+    }
+    easeTimerRef.current = setInterval(() => {
+      currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.08;
+      if (targetSpeedRef.current === 0 && currentSpeedRef.current <= 0.01) {
+        currentSpeedRef.current = 0;
+        applyPlayback();
+        clearInterval(easeTimerRef.current);
+        easeTimerRef.current = null;
+        return;
+      }
+      applyPlayback();
+    }, 80);
+  };
+
+  const refreshTarget = () => {
+    const next =
+      (hoveringRef.current || isCriticalRef.current || ambientPulseRef.current || burstTimerRef.current)
+        ? baseSpeedRef.current : 0;
+    targetSpeedRef.current = next;
+    if (next > 0 || currentSpeedRef.current > 0.01) {
+      ensureEaseLoop();
+    }
+  };
+
   // Keep ambientPulseRef in sync with the prop.
   useEffect(() => { ambientPulseRef.current = ambientPulse; refreshTarget(); }, [ambientPulse]);
 
-  const refreshTarget = () => {
-    targetSpeedRef.current =
-      (hoveringRef.current || isCriticalRef.current || ambientPulseRef.current || burstTimerRef.current)
-        ? baseSpeedRef.current : 0;
-  };
   // Force the liquid to flow for `ms` (default 30s), then settle back to its
   // resting state. Used as feedback when popping out / retracting a widget.
   const startFlowBurst = (ms = 30000) => {
@@ -645,6 +839,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
       refreshTarget();
     }, ms);
     targetSpeedRef.current = baseSpeedRef.current;
+    ensureEaseLoop();
   };
   const handleEnter = () => {
     hoveringRef.current = true;
@@ -666,10 +861,11 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   // Keep the target in sync when the critical state flips on a data update.
   useEffect(() => { refreshTarget(); }, [isCritical]);
 
-  // Cleanup linger/burst timers on unmount.
+  // Cleanup linger/burst/ease timers on unmount.
   useEffect(() => () => {
     if (lingerTimerRef.current) clearTimeout(lingerTimerRef.current);
     if (burstTimerRef.current) clearTimeout(burstTimerRef.current);
+    if (easeTimerRef.current) { clearInterval(easeTimerRef.current); easeTimerRef.current = null; }
   }, []);
 
   useEffect(() => {
@@ -678,45 +874,12 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
       try {
         // Seek to a random frame so the paused orb shows liquid, not black.
         v.currentTime = Math.random() * (v.duration || 10);
-        currentSpeedRef.current = isCriticalRef.current ? baseSpeedRef.current : 0;
       } catch (e) {}
     }
-
-    const loop = (timestamp) => {
-      const vid = videoRef.current;
-      // Gate on duration (available once metadata loads, readyState>=1) rather
-      // than readyState>=2: WKWebView often parks an unplayed <video> at
-      // readyState 1 and never buffers full frames, which froze the liquid.
-      // Seeking currentTime itself drives WKWebView to render that frame.
-      if (vid && !isNaN(vid.duration) && vid.duration > 0) {
-        const dt = lastTimeRef.current ? (timestamp - lastTimeRef.current) / 1000 : 0;
-        lastTimeRef.current = timestamp;
-
-        // Ease playback speed toward the target (inertia for a fluid feel).
-        currentSpeedRef.current +=
-          (targetSpeedRef.current - currentSpeedRef.current) * 0.05;
-        const spd = currentSpeedRef.current;
-
-        if (spd > 0.01) {
-          // Boomerang:正放到末帧反弹倒放,倒放到首帧再反弹正放。240 帧素材靠这个
-          // 实现"正放+倒放"循环,延长流动时长且不增加帧数;端点反弹不停留 → 峰值/谷值
-          // 各只出现一次,没有重复帧顿挫(这正是之前烤成 480 帧视频的毛病所在)。
-          // 视频本身已经是"正放+倒放"(478 帧 boomerang),这里只需正向播放循环。
-          // 关键:永不反向 seek —— WKWebView 反向跳 currentTime 那一帧会整球闪黑。
-          // 首尾无缝(峰值/谷值各只一帧),正向 wrap 不跳。
-          const advance = dt * spd;
-          let newTime = vid.currentTime + advance;
-          const dur = vid.duration;
-          if (newTime >= dur) newTime -= dur;
-          try { vid.currentTime = newTime; } catch (e) {}
-        }
-      } else {
-        lastTimeRef.current = timestamp;
-      }
-      rAFRef.current = requestAnimationFrame(loop);
-    };
-    rAFRef.current = requestAnimationFrame(loop);
-    return () => { if (rAFRef.current) cancelAnimationFrame(rAFRef.current); };
+    currentSpeedRef.current = isCriticalRef.current ? baseSpeedRef.current : 0;
+    if (targetSpeedRef.current > 0 || currentSpeedRef.current > 0.01) {
+      ensureEaseLoop();
+    }
   }, []);
 
   // 开场"灌满"动效:液体先自顾自从空到满涨一轮(和真实数据无关),看起来像是
@@ -785,7 +948,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
         <div
           className="orb-glass"
           ref={orbGlassRef}
-          data-provider={label ? label.toLowerCase() : undefined}
+          data-provider={providerKey || (label ? label.toLowerCase() : undefined)}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
           onMouseDown={(e) => eggBeginDrag(e, orbGlassRef.current)}
@@ -814,16 +977,17 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                   if (v && v.duration) v.currentTime = Math.random() * (v.duration - 0.1);
                 } catch (e) {}
               }}
-              onLoadedData={() => { loadedOnceRef.current = true; }}
+              onLoadedData={() => {
+                loadedOnceRef.current = true;
+                videoRetryRef.current = 0;
+                if (targetSpeedRef.current > 0 || currentSpeedRef.current > 0.01) {
+                  applyPlayback();
+                  ensureEaseLoop();
+                }
+              }}
               onError={() => {
-                // Only retry a cold-start failure (backend not up yet). Once the
-                // video has loaded, never call load() again — reloading wipes the
-                // buffer and makes the orb blink.
-                // ~2min window (40 × 3s): the bundled PyInstaller backend is a
-                // one-file build that unpacks on first launch (~15s) plus a
-                // first-run Gatekeeper check, so the video endpoint can take a
-                // while to come up. A short window left the orbs permanently dry.
-                if (loadedOnceRef.current || videoRetryRef.current >= 40) return;
+                // Retry both cold-start failures and mid-session media evictions.
+                if (videoRetryRef.current >= 40) return;
                 videoRetryRef.current += 1;
                 setTimeout(() => {
                   try { videoRef.current && videoRef.current.load(); } catch (e) {}
@@ -842,18 +1006,18 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
         {/* SVG Rings */}
         <svg className="orb-rings-svg" viewBox="0 0 200 200">
           <defs>
-            <filter id={`glow-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+            <filter id={`glow-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="4" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
             {hasSecondary && (
-              <filter id={`glow-sec-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+              <filter id={`glow-sec-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             )}
             {hasTertiary && (
-              <filter id={`glow-ter-${label.replace(/\s+/g, '-')}`} x="-20%" y="-20%" width="140%" height="140%">
+              <filter id={`glow-ter-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="2.5" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
@@ -874,7 +1038,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             strokeDasharray={circumference}
             strokeDashoffset={displayStrokeDashoffset}
             transform="rotate(-90 100 100)"
-            filter={`url(#glow-${label.replace(/\s+/g, '-')})`}
+            filter={`url(#glow-${uid})`}
           />
 
           {/* Inner Rings */}
@@ -892,7 +1056,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 strokeDasharray={circumferenceSec}
                 strokeDashoffset={displayStrokeDashoffsetSec}
                 transform="rotate(-90 100 100)"
-                filter={`url(#glow-sec-${label.replace(/\s+/g, '-')})`}
+                filter={`url(#glow-sec-${uid})`}
               />
             </>
           ) : (
@@ -912,7 +1076,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 strokeDasharray={circumferenceTer}
                 strokeDashoffset={displayStrokeDashoffsetTer}
                 transform="rotate(-90 100 100)"
-                filter={`url(#glow-ter-${label.replace(/\s+/g, '-')})`}
+                filter={`url(#glow-ter-${uid})`}
               />
             </>
           )}
@@ -928,12 +1092,12 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
               title={authFix.title}
             >{authFix.hint}</span>
           ) : (
-          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{offline ? "--:--:--" : isWeeklyExhausted && (timer === "READY TO GO" || timer === "READY") ? "WAIT RESET" : timer}</span>
+          <span className="orb-timer" style={{ textShadow: `0 0 12px ${color}` }}>{offline ? "--:--:--" : isWeeklyExhausted && (timer === (t ? t.readyToGo : "READY TO GO") || timer === (t ? t.ready : "READY")) ? (t ? t.waitReset : "WAIT RESET") : timer}</span>
           )}
           {authFix || offline ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
           ) : null}
-          {authFix ? null : tertiaryTimer ? (
+          {authFix || offline ? null : tertiaryTimer ? (
             <span className="orb-timer-tertiary" style={{ color: tertiaryColor || '#c084fc', textShadow: `0 0 8px ${tertiaryColor || '#c084fc'}` }}>{tertiaryTimer}</span>
           ) : null}
         </div>
@@ -951,7 +1115,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
         <div className="orb-title-row">
           <h3 className="orb-title">{label}</h3>
           {onPopOut && (
-            <button className="orb-popout-btn" onClick={onPopOut} title="Pop out as desktop widget">
+            <button className="orb-popout-btn" onClick={onPopOut} title={t ? t.popOutTitle : "Pop out as desktop widget"}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
@@ -968,7 +1132,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             title={authFix.title}
           >{authFix.cta}</p>
         ) : offline ? (
-          <p className="orb-subtitle orb-offline">{appName ? `OFFLINE · OPEN ${appName.toUpperCase()}` : 'OFFLINE'}</p>
+          <p className="orb-subtitle orb-offline">{t ? t.offlineOpenApp(appName) : (appName ? `OFFLINE · OPEN ${appName.toUpperCase()}` : 'OFFLINE')}</p>
         ) : hasSecondary ? (
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
@@ -976,14 +1140,14 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             {hasTertiary && (
               <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: tertiaryColor || '#c084fc', boxShadow: `0 0 6px ${tertiaryColor || '#c084fc'}` }} />{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
             )}
-            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">{t ? t.resetsLeft(resetCredits) : `↺ ${resetCredits} ${resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT`}</p>}
           </div>
         ) : (
           <>
             <p className="orb-subtitle">{primaryLabel ? `${primaryLabel} ${validPct.toFixed(0)}%` : `${validPct.toFixed(0)}% REMAINING`}</p>
             {/* Single-ring orbs (Grok) still show their plan line, without a fake second ring. */}
             {secondaryLabel && <p className="orb-subtitle orb-plan-label">{secondaryLabel}</p>}
-            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">↺ {resetCredits} {resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT</p>}
+            {resetCredits != null && <p className="orb-subtitle orb-reset-credits">{t ? t.resetsLeft(resetCredits) : `↺ ${resetCredits} ${resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT`}</p>}
           </>
         )}
       </div>
@@ -1047,14 +1211,33 @@ function App() {
     }
   });
   // Persistent Settings State
-  const [dataSource, setDataSource] = useLocalStorage('aipulse_dataSource', 'codexbar');
+  const [lang, setLangState] = useState(getInitialLang);
+  const t = useT(lang);
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
+
+  const setLang = (next) => {
+    setLangState(next);
+    try { window.localStorage.setItem(LANG_STORAGE_KEY, next); } catch {}
+    emit('settings-changed', {}).catch(() => {});
+  };
+
+  const [dataMode, setDataMode] = useState(IS_APP_STORE ? 'demo' : 'auto');
   const [alertThreshold, setAlertThreshold] = useLocalStorage('aipulse_alertThreshold', 20);
   const [alertTimerMin, setAlertTimerMin] = useLocalStorage('aipulse_alertTimerMin', 30);
-  const [launchAtLogin, setLaunchAtLogin] = useLocalStorage('aipulse_launchAtLogin', true);
-  const [showInDock, setShowInDock] = useLocalStorage('aipulse_showInDock', false);
-  const [theme, setTheme] = useLocalStorage('aipulse_theme', 'dark');
+  const [customTitles, setCustomTitles] = useLocalStorage(CUSTOM_LABELS_STORAGE_KEY, {
+    claude: '',
+    codex: '',
+    antigravity: '',
+    grok: '',
+  });
   const [autoUpdate, setAutoUpdate] = useLocalStorage('aipulse_autoUpdate', true);
   const [hasPoppedOutWidget, setHasPoppedOutWidget] = useLocalStorage('aipulse_hasPoppedOutWidget', false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState(null);
+
+  useEffect(() => {
+    emit('settings-changed', {}).catch(() => {});
+  }, [alertThreshold, alertTimerMin, customTitles]);
 
   // ── Team View (LAN-only, opt-in) ──
   const [teamSharingEnabled, setTeamSharingEnabled] = useLocalStorage('aipulse_teamSharingEnabled', false);
@@ -1080,6 +1263,17 @@ function App() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  // Sync current data collection mode from local backend config.
+  useEffect(() => {
+    if (!backendUrl) return;
+    fetch(`${backendUrl}/api/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg) => {
+        if (cfg && cfg.data_mode) setDataMode(cfg.data_mode);
+      })
+      .catch(() => {});
+  }, [backendUrl]);
 
   // Generate a stable instance ID once — this is how a pinned teammate stays
   // pinned across their app restarts and IP changes (their IP isn't stable,
@@ -1148,7 +1342,7 @@ function App() {
     if (!backendUrl) return;
     const peer = parseManualPeerAddress(teamManualHost);
     if (!peer) {
-      setTeamManualError('Use a host or host:port, e.g. 192.168.1.20:43127');
+      setTeamManualError(t.teamManualFormatErr);
       return;
     }
     setTeamManualError('');
@@ -1159,11 +1353,11 @@ function App() {
     })
       .then(async (r) => {
         const d = await r.json();
-        if (!r.ok) { setTeamManualError(d.detail || 'Could not connect'); return; }
+        if (!r.ok) { setTeamManualError(d.detail || t.teamConnectErr); return; }
         pinTeamPeer(d);
         setTeamManualHost('');
       })
-      .catch(() => setTeamManualError('Could not connect'));
+      .catch(() => setTeamManualError(t.teamConnectErr));
   };
 
   // Clicking "Share" for the first time (no name set yet) shouldn't silently
@@ -1267,19 +1461,22 @@ function App() {
   // This app is meant to stay running for days at a time, not get relaunched
   // often, so a launch-only check could miss releases for a long time —
   // also re-check every 3 days for as long as the app stays open.
+  // Disabled in App Store builds (updates are managed by the App Store).
   useEffect(() => {
-    const t = setTimeout(() => { checkForUpdates(false); }, 4000);
+    if (IS_APP_STORE) return undefined;
+    const timer = setTimeout(() => { checkForUpdates(false); }, 4000);
     const RECHECK_MS = 3 * 24 * 60 * 60 * 1000;
     const id = setInterval(() => { checkForUpdates(false); }, RECHECK_MS);
-    return () => { clearTimeout(t); clearInterval(id); };
+    return () => { clearTimeout(timer); clearInterval(id); };
   }, []);
 
   // ── Free trial / license (state lives in the macOS Keychain, see lib.rs) ──
   const [trialStart, setTrialStart] = useState(null);   // epoch seconds, or null until loaded
-  const [licensed, setLicensed] = useState(false);
-  const [trialLoaded, setTrialLoaded] = useState(false);
+  const [licensed, setLicensed] = useState(IS_APP_STORE);
+  const [trialLoaded, setTrialLoaded] = useState(IS_APP_STORE);
 
   useEffect(() => {
+    if (IS_APP_STORE) return;
     (async () => {
       try {
         const lic = await invoke('secure_get', { key: 'license' });
@@ -1302,6 +1499,7 @@ function App() {
   // 激活:调 Lemon Squeezy activate 接口验证 key + 绑定本机 → 写钥匙串 → 永久解锁。
   // activate 是公开接口(不需 secret key);核对 product_id/variant_id 确保 key 确属本产品。
   const activateLicense = async (key) => {
+    if (IS_APP_STORE) return true;
     const k = (key || '').trim();
     if (!k) return false;
     try {
@@ -1332,8 +1530,27 @@ function App() {
   const daysLeft = trialStart != null
     ? Math.max(0, TRIAL_DAYS - Math.floor((Date.now() / 1000 - trialStart) / 86400))
     : null;
-  const isLicensed = licensed;   // 唯一准绳:钥匙串里的 license(不再认 localStorage 的 plan)
-  const isExpired = trialLoaded && !isLicensed && trialStart != null && daysLeft <= 0;
+  const isLicensed = IS_APP_STORE || licensed;
+  const isExpired = !IS_APP_STORE && trialLoaded && !isLicensed && trialStart != null && daysLeft <= 0;
+
+  const resetAllSettings = () => {
+    const defaultMode = IS_APP_STORE ? 'demo' : 'auto';
+    setAlertThreshold(20);
+    setAlertTimerMin(30);
+    setCustomTitles({ claude: '', codex: '', antigravity: '', grok: '' });
+    setTeamSharingEnabled(false);
+    setTeamDisplayName('');
+    setPinnedPeers([]);
+    setAutoUpdate(true);
+    setDataMode(defaultMode);
+    if (backendUrl) {
+      fetch(`${backendUrl}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data_mode: defaultMode }),
+      }).catch(() => {});
+    }
+  };
 
   const [connected, setConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1396,8 +1613,11 @@ function App() {
   useEffect(() => {
     if (!backendUrl) return undefined;
     let eventSource = null;
+    let retryTimer = null;
+    let cancelled = false;
 
     const connectSSE = () => {
+      if (cancelled) return;
       eventSource = new EventSource(`${backendUrl}/api/stream`);
 
       eventSource.onopen = () => {
@@ -1418,13 +1638,17 @@ function App() {
         console.error("SSE connection error, retrying...", err);
         setConnected(false);
         eventSource.close();
-        setTimeout(connectSSE, 3000);
+        if (!cancelled) {
+          retryTimer = setTimeout(connectSSE, 3000);
+        }
       };
     };
 
     connectSSE();
 
     return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       if (eventSource) {
         eventSource.close();
       }
@@ -1434,15 +1658,16 @@ function App() {
   useEffect(() => {
     const timer = setInterval(() => {
       const d = dataRef.current;
+      const curT = tRef.current;
       setTimers({
-        claude: formatClaudePrimaryCountdown(d.claude),
-        claude_secondary: formatCountdownHMS(d.claude.resetsAt_secondary),
-        codex: formatCodexPrimaryCountdown(d.codex),
-        codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary),
-        antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary),
-        antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt),
-        antigravity_gemini4: formatCountdownHMS(d.antigravity.resetsAt_tertiary),
-        grok: formatCountdownHMS(d.grok?.resetsAt)
+        claude: formatClaudePrimaryCountdown(d.claude, curT),
+        claude_secondary: formatCountdownHMS(d.claude.resetsAt_secondary, curT.ready),
+        codex: formatCodexPrimaryCountdown(d.codex, curT),
+        codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary, curT.ready),
+        antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary, curT.ready),
+        antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt, curT.ready),
+        antigravity_gemini4: formatCountdownHMS(d.antigravity.resetsAt_tertiary, curT.ready),
+        grok: formatCountdownHMS(d.grok?.resetsAt, curT.ready)
       });
 
       const date = new Date();
@@ -1459,32 +1684,39 @@ function App() {
     return () => clearInterval(timer);
   }, []);
 
+  const orbLabels = getCustomOrbLabels(IS_APP_STORE, lang);
+  const openDatasourceSettings = () => {
+    setSettingsInitialTab('datasource');
+    setShowSettings(true);
+  };
+
   return (
     <div className="pulse-desktop-environment">
-      {/* ── Trial-ended lock screen ── */}
-      {isExpired && (
+      {/* ── Trial-ended lock screen (direct distribution only) ── */}
+      {!IS_APP_STORE && isExpired && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 6000, background: 'rgba(8,8,11,0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', padding: '24px', textAlign: 'center' }}>
           <div style={{ fontSize: '34px' }}>⏳</div>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: '18px' }}>Your free trial has ended</h2>
-          <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '13px', maxWidth: '260px' }}>Unlock AI Usage Ball forever — a one-time A$9.99.</p>
-          <button onClick={() => openUrl(CHECKOUT_FULL)} style={{ padding: '10px 24px', background: '#ff8c00', color: '#111', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>Buy · A$9.99</button>
+          <h2 style={{ margin: 0, color: '#fff', fontSize: '18px' }}>{t.trialEndedTitle}</h2>
+          <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '13px', maxWidth: '260px' }}>{t.trialEndedDesc}</p>
+          <button onClick={() => openUrl(CHECKOUT_FULL)} style={{ padding: '10px 24px', background: '#ff8c00', color: '#111', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>{t.buyFullBtn}</button>
           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-            <input id="licenseKeyExpired" placeholder="License key" style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #333', background: '#111', color: '#fff', fontFamily: 'monospace', fontSize: '12px', width: '180px' }} />
-            <button onClick={async () => { const ok = await activateLicense(document.getElementById('licenseKeyExpired').value); if (!ok) alert('Invalid license key'); }} style={{ padding: '8px 14px', background: '#333', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>Activate</button>
+            <input id="licenseKeyExpired" placeholder={t.licensePlaceholder} style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #333', background: '#111', color: '#fff', fontFamily: 'monospace', fontSize: '12px', width: '180px' }} />
+            <button onClick={async () => { const ok = await activateLicense(document.getElementById('licenseKeyExpired').value); if (!ok) alert(t.invalidLicense); }} style={{ padding: '8px 14px', background: '#333', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>{t.activateBtn}</button>
           </div>
         </div>
       )}
 
       {/* 3. High-Fidelity Ando Dark Concrete Popover Window */}
       <div className="popover-window">
-        {showSettings && <SettingsModal 
-          onClose={() => setShowSettings(false)}
-          dataSource={dataSource} setDataSource={setDataSource}
+        {showSettings && <SettingsModal
+          onClose={() => { setShowSettings(false); setSettingsInitialTab(null); }}
+          t={t}
+          lang={lang} setLang={setLang}
+          backendUrl={backendUrl}
+          dataMode={dataMode} setDataMode={setDataMode}
           alertThreshold={alertThreshold} setAlertThreshold={setAlertThreshold}
           alertTimerMin={alertTimerMin} setAlertTimerMin={setAlertTimerMin}
-          launchAtLogin={launchAtLogin} setLaunchAtLogin={setLaunchAtLogin}
-          showInDock={showInDock} setShowInDock={setShowInDock}
-          theme={theme} setTheme={setTheme}
+          customTitles={customTitles} setCustomTitles={setCustomTitles}
           autoUpdate={autoUpdate} setAutoUpdate={setAutoUpdate}
           teamSharingEnabled={teamSharingEnabled} setTeamSharingEnabled={setTeamSharingEnabled}
           teamDisplayName={teamDisplayName} setTeamDisplayName={setTeamDisplayName}
@@ -1493,6 +1725,8 @@ function App() {
           licensed={isLicensed} daysLeft={daysLeft}
           onActivate={activateLicense}
           checkoutUrl={CHECKOUT_TRIAL}
+          onResetAll={resetAllSettings}
+          initialTab={settingsInitialTab}
         />}
         <div className="concrete-overlay"></div>
 
@@ -1502,21 +1736,23 @@ function App() {
             <div className="fluid-pixel-container" data-tauri-drag-region>
               <div className="fluid-pixel" data-tauri-drag-region></div>
             </div>
-            <span className="popover-title" data-tauri-drag-region>AI Usage Ball</span>
+            <span className="popover-title" data-tauri-drag-region>{t.appName}</span>
           </div>
           
           <div className="popover-status-badge">
             <span className={`status-led ${connected ? 'live' : 'offline'}`}></span>
-            <span className="status-text">{connected ? 'LIVE_SYNC' : 'OFFLINE'}</span>
-            {!isLicensed && daysLeft != null && (
+            <span className="status-text">
+              {connected ? (dataMode === 'demo' ? t.demoModeBadge : t.liveSync) : t.offline}
+            </span>
+            {!IS_APP_STORE && !isLicensed && daysLeft != null && (
               <span
                 title="Free trial"
                 style={{ fontSize: '9px', fontWeight: 'bold', letterSpacing: '0.05em', color: daysLeft <= 3 ? '#ff5a5a' : 'rgba(255,255,255,0.55)', padding: '2px 6px', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px' }}
               >
-                TRIAL · {daysLeft}d
+                {t.trialDays(daysLeft)}
               </span>
             )}
-            <button className="settings-icon-btn" onClick={() => setShowSettings(true)}>
+            <button className="settings-icon-btn" onClick={() => { setSettingsInitialTab(null); setShowSettings(true); }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1528,105 +1764,126 @@ function App() {
         {/* The Volumetric Orbs Grid */}
         <main className="spheres-grid">
           
-          {/* Orb 1: Anthropic (Amber-Orange + Inner Yellow for Weekly) */}
-          <DualRingOrb 
-            color="#ff8c00" 
-            secondaryColor="#facc15" 
-            glowColor="rgba(255, 85, 0, 0.4)" 
+          {/* Orb 1: Slot 1 (Amber-Orange + Inner Yellow for Weekly) */}
+          <DualRingOrb
+            providerKey="claude"
+            color="#ff8c00"
+            secondaryColor="#facc15"
+            glowColor="rgba(255, 85, 0, 0.4)"
             videoFilter="none"
-            timer={timers.claude} 
+            timer={timers.claude}
             secondaryTimer={timers.claude_secondary}
-            percentage={(data.claude.rate_limit_pct_secondary >= 100 || data.claude.status_secondary === "EXHAUSTED") ? 0 : (100 - data.claude.rate_limit_pct)} 
+            percentage={(data.claude.rate_limit_pct_secondary >= 100 || data.claude.status_secondary === "EXHAUSTED") ? 0 : (100 - data.claude.rate_limit_pct)}
             secondaryPercentage={100 - data.claude.rate_limit_pct_secondary}
-            label="CLAUDE" 
-            primaryLabel="CLAUDE REMAINING"
-            secondaryLabel="WEEKLY REMAINING"
+            label={orbLabels.claude.title}
+            primaryLabel={orbLabels.claude.primary}
+            secondaryLabel={orbLabels.claude.secondary}
+            hasWeeklySecondary={true}
             stackLabels={true}
             connected={connected}
             dataLoaded={!!data.claude.loaded}
             introOrder={0}
             ambientPulse={ambientOrb === 'claude'}
-            // `&& !loaded` alone hid this for the case that actually happens in
-            // practice: data loaded fine once, then auth died mid-session (the
-            // cookie is gone and the read-only OAuth token expired). `stale`
-            // gates that case so a transient blip doesn't flash SIGN IN;
-            // `!loaded` still covers cold start, where `stale` can't be true.
-            needsLogin={!!data.claude.needsLogin && (!data.claude.loaded || !!data.claude.stale)}
+            criticalPctThreshold={Number(alertThreshold)}
+            criticalMinThreshold={Number(alertTimerMin)}
+            t={t}
+            needsLogin={!IS_APP_STORE && !!data.claude.needsLogin && (!data.claude.loaded || !!data.claude.stale)}
             onNeedsLogin={() => openUrl('https://claude.ai')}
-            needsDiskAccess={!!data.claude.needsDiskAccess && (!data.claude.loaded || !!data.claude.stale)}
+            needsDiskAccess={!IS_APP_STORE && !!data.claude.needsDiskAccess && (!data.claude.loaded || !!data.claude.stale)}
             onNeedsDiskAccess={() => invoke('open_full_disk_access_settings').catch(() => {})}
+            needsSetup={!!data.claude.needsSetup}
+            onNeedsSetup={openDatasourceSettings}
             backendUrl={backendUrl}
             onPopOut={() => { launchWidget('claude'); setHasPoppedOutWidget(true); }}
           />
 
-          {/* Orb 2: Codex (Red) */}
-          <DualRingOrb 
+          {/* Orb 2: Slot 2 (Red) */}
+          <DualRingOrb
+            providerKey="codex"
             color="#ef4444"
             secondaryColor="#fb7185"
-            glowColor="rgba(239, 68, 68, 0.4)" 
+            glowColor="rgba(239, 68, 68, 0.4)"
             videoFilter="hue-rotate(320deg) saturate(2) brightness(1.2)"
-            timer={timers.codex} 
+            timer={timers.codex}
             secondaryTimer={timers.codex_secondary}
-            percentage={(data.codex.rate_limit_pct_secondary >= 100 || data.codex.status_secondary === "EXHAUSTED") ? 0 : (100 - data.codex.rate_limit_pct)} 
+            percentage={(data.codex.rate_limit_pct_secondary >= 100 || data.codex.status_secondary === "EXHAUSTED") ? 0 : (100 - data.codex.rate_limit_pct)}
             secondaryPercentage={100 - data.codex.rate_limit_pct_secondary}
-            label="CODEX" 
-            primaryLabel="CODEX REMAINING"
-            secondaryLabel="WEEKLY REMAINING"
+            label={orbLabels.codex.title}
+            primaryLabel={orbLabels.codex.primary}
+            secondaryLabel={orbLabels.codex.secondary}
+            hasWeeklySecondary={true}
             stackLabels={true}
             connected={connected}
             dataLoaded={!!data.codex.loaded}
             introOrder={1}
             resetCredits={data.codex.reset_credits}
             ambientPulse={ambientOrb === 'codex'}
+            criticalPctThreshold={Number(alertThreshold)}
+            criticalMinThreshold={Number(alertTimerMin)}
+            t={t}
+            needsSetup={!!data.codex.needsSetup}
+            onNeedsSetup={openDatasourceSettings}
             backendUrl={backendUrl}
             onPopOut={() => { launchWidget('codex'); setHasPoppedOutWidget(true); }}
           />
 
-          {/* Orb 3: Antigravity (Cyan-Blue + Orange + Violet for Gemini 4) */}
-          <DualRingOrb 
-            color="#06b6d4" 
+          {/* Orb 3: Slot 3 (Cyan-Blue + Orange + Violet) */}
+          <DualRingOrb
+            providerKey="antigravity"
+            color="#06b6d4"
             secondaryColor="#fb923c"
             tertiaryColor="#c084fc"
-            glowColor="rgba(6, 182, 212, 0.4)" 
+            glowColor="rgba(6, 182, 212, 0.4)"
             videoFilter="hue-rotate(185deg) saturate(1.8) brightness(1.2)"
-            timer={timers.antigravity} 
+            timer={timers.antigravity}
             secondaryTimer={timers.antigravity_claude}
             tertiaryTimer={timers.antigravity_gemini4}
-            percentage={100 - data.antigravity.rate_limit_pct_secondary} 
-            secondaryPercentage={100 - data.antigravity.rate_limit_pct} 
-            tertiaryPercentage={100 - (data.antigravity.rate_limit_pct_tertiary ?? 0)}
-            label="ANTIGRAVITY" 
-            primaryLabel="GEMINI REMAINING"
-            secondaryLabel="CLAUDE REMAINING"
-            tertiaryLabel="GEMINI 4 REMAINING"
+            percentage={100 - (data.antigravity?.rate_limit_pct_secondary ?? 0)}
+            secondaryPercentage={100 - (data.antigravity?.rate_limit_pct ?? 0)}
+            tertiaryPercentage={100 - (data.antigravity?.rate_limit_pct_tertiary ?? 0)}
+            label={orbLabels.antigravity.title}
+            primaryLabel={orbLabels.antigravity.primary}
+            secondaryLabel={orbLabels.antigravity.secondary}
+            tertiaryLabel={orbLabels.antigravity.tertiary}
             stackLabels={true}
             connected={connected}
             dataLoaded={!!data.antigravity.loaded}
             introOrder={2}
-            offline={data.antigravity.available === false}
-            appName="Antigravity"
+            offline={data.antigravity.available === false && !data.antigravity.needsSetup}
+            appName={IS_APP_STORE ? orbLabels.antigravity.title : "Antigravity"}
             ambientPulse={ambientOrb === 'antigravity'}
+            criticalPctThreshold={Number(alertThreshold)}
+            criticalMinThreshold={Number(alertTimerMin)}
+            t={t}
+            needsSetup={!!data.antigravity.needsSetup}
+            onNeedsSetup={openDatasourceSettings}
             backendUrl={backendUrl}
             onPopOut={() => { launchWidget('antigravity'); setHasPoppedOutWidget(true); }}
           />
 
-          {/* Orb 4: Grok (Monochrome Silver/Cool Slate) */}
-          <DualRingOrb 
-            color="#e2e8f0" 
-            secondaryColor="#94a3b8" 
-            glowColor="rgba(226, 232, 240, 0.4)" 
+          {/* Orb 4: Slot 4 (Monochrome Silver/Cool Slate) */}
+          <DualRingOrb
+            providerKey="grok"
+            color="#e2e8f0"
+            secondaryColor="#94a3b8"
+            glowColor="rgba(226, 232, 240, 0.4)"
             videoFilter="grayscale(1) brightness(1.25) contrast(1.1)"
-            timer={timers.grok} 
-            percentage={data.grok?.status === "EXHAUSTED" ? 0 : (100 - (data.grok?.rate_limit_pct || 0))} 
-            label="GROK" 
-            primaryLabel="GROK REMAINING"
-            secondaryLabel={data.grok?.plan ? `${data.grok.plan.toUpperCase()} PLAN` : "GROK BOT"}
+            timer={timers.grok}
+            percentage={data.grok?.status === "EXHAUSTED" ? 0 : (100 - (data.grok?.rate_limit_pct || 0))}
+            label={orbLabels.grok.title}
+            primaryLabel={orbLabels.grok.primary}
+            secondaryLabel={data.grok?.plan ? (IS_APP_STORE ? orbLabels.grok.secondary : `${data.grok.plan.toUpperCase()} PLAN`) : orbLabels.grok.secondary}
             connected={connected}
             dataLoaded={!!data.grok?.loaded}
             introOrder={3}
-            offline={data.grok?.available === false}
-            appName="Grok Bot"
+            offline={data.grok?.available === false && !data.grok?.needsSetup}
+            appName={IS_APP_STORE ? orbLabels.grok.title : "Grok Bot"}
             ambientPulse={ambientOrb === 'grok'}
+            criticalPctThreshold={Number(alertThreshold)}
+            criticalMinThreshold={Number(alertTimerMin)}
+            t={t}
+            needsSetup={!!data.grok?.needsSetup}
+            onNeedsSetup={openDatasourceSettings}
             backendUrl={backendUrl}
             onPopOut={() => { launchWidget('grok'); setHasPoppedOutWidget(true); }}
           />
@@ -1634,7 +1891,7 @@ function App() {
         </main>
 
         {!hasPoppedOutWidget && (
-          <p className="widget-hint">click to put on your desktop</p>
+          <p className="widget-hint">{t.clickDesktopHint}</p>
         )}
 
         {/* Team View: 2-3 pinned teammates' usage, LAN-only, opt-in. */}
@@ -1659,7 +1916,7 @@ function App() {
                   {chip('antigravity')}
                   {chip('grok')}
                 </div>
-                <button className="team-row-remove" onClick={() => unpinTeamPeer(pinned.instance_id)} title="Remove">×</button>
+                <button className="team-row-remove" onClick={() => unpinTeamPeer(pinned.instance_id)} title={t.teamRemoveTitle}>×</button>
               </div>
             );
           })}
@@ -1668,35 +1925,35 @@ function App() {
             <button
               className={`team-share-btn${teamSharingEnabled ? ' active' : ''}`}
               onClick={handleShareClick}
-              title="Broadcast my usage to teammates on this network"
+              title={t.teamShareTooltip}
             >
-              {teamSharingEnabled ? '● Sharing' : 'Share'}
+              {teamSharingEnabled ? t.teamSharingActive : t.teamShareBtn}
             </button>
             {pinnedPeers.length < 3 && (
               <button
                 className="team-add-btn"
                 onClick={() => { setShowTeamAdd(v => !v); setShowTeamNamePrompt(false); setTeamManualError(''); }}
               >
-                {showTeamAdd ? 'Cancel' : (pinnedPeers.length === 0 ? '+ Team' : '+ Add teammate')}
+                {showTeamAdd ? t.teamCancel : (pinnedPeers.length === 0 ? t.teamAddFirst : t.teamAddMore)}
               </button>
             )}
           </div>
 
           {showTeamNamePrompt && (
             <div className="team-add-picker">
-              <p className="team-add-label">What should teammates see?</p>
+              <p className="team-add-label">{t.teamNamePrompt}</p>
               <div className="team-add-manual">
                 <input
                   className="ando-input"
                   type="text"
                   maxLength={40}
-                  placeholder="Your name, e.g. Ben"
+                  placeholder={t.teamNamePromptPlaceholder}
                   value={teamNameDraft}
                   onChange={(e) => setTeamNameDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') confirmTeamName(); }}
                   autoFocus
                 />
-                <button className="ando-btn" onClick={confirmTeamName}>Start sharing</button>
+                <button className="ando-btn" onClick={confirmTeamName}>{t.teamStartSharing}</button>
               </div>
             </div>
           )}
@@ -1707,19 +1964,19 @@ function App() {
                 .filter(p => !pinnedPeers.some(pp => pp.instance_id === p.instance_id))
                 .map(p => (
                   <button key={p.instance_id} className="team-add-discovered-item" onClick={() => pinTeamPeer(p)}>
-                    {p.display_name} <span className="team-add-discovered-hint">found on this network</span>
+                    {p.display_name} <span className="team-add-discovered-hint">{t.teamFoundOnNetwork}</span>
                   </button>
                 ))}
               <div className="team-add-manual">
                 <input
                   className="ando-input"
                   type="text"
-                  placeholder="or teammate's IP:port"
+                  placeholder={t.teamManualPlaceholder}
                   value={teamManualHost}
                   onChange={(e) => setTeamManualHost(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addTeamPeerManual(); }}
                 />
-                <button className="ando-btn" onClick={addTeamPeerManual}>Add</button>
+                <button className="ando-btn" onClick={addTeamPeerManual}>{t.teamAddBtn}</button>
               </div>
               {teamManualError && <p className="team-add-error">{teamManualError}</p>}
             </div>
@@ -1729,7 +1986,11 @@ function App() {
         {/* Tactile Ando Concrete Bottom Border Accent */}
         <div className="popover-footer-accent">
           <span className="credits-readout">{currentTime}</span>
-          <span className="branding-readout branding-link" onClick={() => openUrl('https://aiusageball.com')} title="aiusageball.com">AI Usage Ball</span>
+          {IS_APP_STORE ? (
+            <span className="branding-readout">{t.appName}</span>
+          ) : (
+            <span className="branding-readout branding-link" onClick={() => openUrl('https://aiusageball.com')} title="aiusageball.com">AI Usage Ball</span>
+          )}
         </div>
       </div>
 

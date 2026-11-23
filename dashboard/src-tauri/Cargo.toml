@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.8"
+version = "0.3.9"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -14,6 +14,11 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["direct"]
+direct = ["tauri/macos-private-api", "dep:tauri-plugin-updater"]
+mas = []
+
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 
@@ -24,7 +29,7 @@ log = "0.4"
 tauri = { version = "2.11.2", features = ["macos-private-api"] }
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", optional = true }
 tauri-plugin-process = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]

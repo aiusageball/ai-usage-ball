@@ -2,6 +2,25 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.9] — 2026-11-23
+
+### Added
+- **Antigravity 2.34+ Support (`agy` CLI Fallback)**: Automatically falls back to the official `agy -p /usage --output-format json` CLI when newer Antigravity builds no longer expose `--csrf_token` in process arguments, restoring live Gemini, Claude, and Gemini 4 quota rings and reset countdowns.
+- **Data Source Modes, Custom Labels & Bilingual UI**: Added Demo Mode and Manual Credentials configuration in Settings → Data Source, custom orb titles in Settings → Appearance, and English / Simplified Chinese (`简体中文`) language switching.
+
+### Changed
+- **Lower Idle CPU & Power Usage**: Replaced the main dashboard's continuous `requestAnimationFrame` video-seeking loop with native playback and demand-driven easing timers across both the dashboard and floating desktop widgets, so idle orbs consume near-zero JS CPU.
+- **Lightweight Change-Only SSE Stream**: Stripped internal diagnostic logs from `/api/stream` and switched to push-on-change updates with 15-second keepalive heartbeats.
+- **Smarter Background Polling**: Suspended desktop hover-dwell cursor polling when no widgets are open, and switched Team View peer checks to concurrent requests with stale-peer cleanup.
+
+### Fixed
+- **Antigravity Offline State & Team View**: Hidden stale purple Gemini 4 timers and leftover video dots when Antigravity is offline, added expired-window clamping for Antigravity, and stopped broadcasting a false `100%` to Team View peers while offline.
+- **Retina Widget Hover Detection**: Converted physical window bounds to logical points using `scale_factor` so 2-second hover dwell aligns accurately on Retina displays.
+- **Manual Credentials Settings**: Fixed HTTP 422 errors when saving numeric port/percentage fields, restored `(Configured)` status badges, and allowed clearing saved values.
+- **Local Network Security**: Restricted Team View control endpoints to localhost and ensured diagnostic logs are redacted on LAN responses.
+- **Apple Watch Companion**: Fixed missing liquid frame animations after orb label updates and added offline display handling for Antigravity.
+- **Updater & Reliability**: Rebuilt and signed the auto-updater `.app.tar.gz` from the notarized `.app`, fixed stale backend cleanup on launch, declared `_aipulseteam._tcp` in `Info.plist`, fixed HTTP suffix/out-of-range video requests, and fixed easter-egg window reset width (`1000px`) and mid-drag `Esc` exit.
+
 ## [0.3.8] — 2026-11-09
 
 ### Added

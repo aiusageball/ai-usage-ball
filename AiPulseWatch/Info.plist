@@ -27,15 +27,17 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AI Pulse Watch needs access to the local network to sync with your Mac application.</string>
+	<string>AI Usage Ball 需要访问本地局域网以发现并同步您 Mac 端应用的实时配额数据。 / AI Usage Ball needs local network access to discover and sync live quota data from your Mac companion app.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_aipulse._tcp</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 </dict>

@@ -41,21 +41,55 @@ struct ContentView: View {
     
     var body: some View {
         Group {
-            if networkManager.connectionStatus != "Connected" {
-                VStack(spacing: 8) {
-                    ProgressView()
-                        .tint(.white)
+            if networkManager.connectionStatus != "Connected" && !networkManager.isDemoMode {
+                VStack(spacing: 10) {
+                    if !networkManager.searchTimedOut && networkManager.connectionStatus == "正在搜索 Mac..." {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "desktopcomputer.trianglebadge.exclamationmark")
+                            .font(.system(size: 20))
+                            .foregroundColor(.orange)
+                    }
                     Text(networkManager.connectionStatus)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.gray)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                    if networkManager.searchTimedOut || networkManager.connectionStatus != "正在搜索 Mac..." {
+                        Text("请在同一 Wi-Fi 下打开 Mac 端")
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                    }
+                    Button {
+                        networkManager.enableDemoMode()
+                    } label: {
+                        Text("演示模式")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+
+                    if networkManager.searchTimedOut || (networkManager.connectionStatus != "正在搜索 Mac..." && networkManager.connectionStatus != "Connected") {
+                        Button {
+                            networkManager.retryBrowsing()
+                        } label: {
+                            Text("重新连接")
+                                .font(.system(size: 11, design: .rounded))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
                 }
+                .padding(.horizontal, 8)
             } else if let stats = networkManager.stats {
                 TabView(selection: $tab) {
-                    // ── Claude ──
+                    // ── Slot 1 ──
                     OrbPage(
-                        label: "CLAUDE",
-                        primaryLabel: "CLAUDE REMAINING",
-                        secondaryLabel: "WEEKLY REMAINING",
+                        atlasName: "claude",
+                        label: "MODEL A",
+                        primaryLabel: "SESSION",
+                        secondaryLabel: "WEEKLY",
                         primaryPct: stats.claude?.remainingPct ?? 100,
                         secondaryPct: stats.claude?.remainingPctSecondary,
                         primaryColor: Color(red: 1.0, green: 0.55, blue: 0.0),      // amber-orange
@@ -67,10 +101,11 @@ struct ContentView: View {
                     )
                     .tag(0)
 
-                    // ── Codex ──
+                    // ── Slot 2 ──
                     OrbPage(
-                        label: "CODEX",
-                        primaryLabel: "CODEX REMAINING",
+                        atlasName: "codex",
+                        label: "CODE",
+                        primaryLabel: "ENGINE",
                         primaryPct: stats.codex?.remainingPct ?? 100,
                         primaryColor: Color(red: 0.94, green: 0.27, blue: 0.27),    // red
                         timer: timers["codex"] ?? "00:00:00",
@@ -79,23 +114,42 @@ struct ContentView: View {
                     )
                     .tag(1)
 
-                    // ── Antigravity ──
+                    // ── Slot 3 ──
+                    let agOffline = stats.antigravity?.available == false
                     OrbPage(
-                        label: "ANTIGRAVITY",
-                        primaryLabel: "GEMINI REMAINING",
-                        secondaryLabel: "CLAUDE REMAINING",
-                        primaryPct: stats.antigravity?.remainingPctSecondary ?? 100,
-                        secondaryPct: stats.antigravity?.remainingPct,
+                        atlasName: "antigravity",
+                        label: "WORKSPACE",
+                        primaryLabel: "FAST",
+                        secondaryLabel: "PRO",
+                        primaryPct: agOffline ? 0 : (stats.antigravity?.remainingPctSecondary ?? 100),
+                        secondaryPct: agOffline ? 0 : stats.antigravity?.remainingPct,
                         primaryColor: Color(red: 0.02, green: 0.71, blue: 0.83),    // cyan
                         secondaryColor: Color(red: 0.98, green: 0.57, blue: 0.24),  // orange
-                        timer: timers["antigravity"] ?? "00:00:00",
-                        secondaryTimer: timers["antigravity_claude"],
-                        exhausted: stats.antigravity?.exhausted ?? false,
+                        timer: agOffline ? "--:--:--" : (timers["antigravity"] ?? "00:00:00"),
+                        secondaryTimer: agOffline ? nil : timers["antigravity_claude"],
+                        exhausted: agOffline ? false : (stats.antigravity?.exhausted ?? false),
                         isActive: tab == 2
                     )
                     .tag(2)
                 }
                 .tabViewStyle(PageTabViewStyle())
+                .overlay(alignment: .top) {
+                    if networkManager.isDemoMode {
+                        Button {
+                            networkManager.exitDemoMode()
+                        } label: {
+                            Text("DEMO · 点击连接 Mac")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.black.opacity(0.65))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                    }
+                }
                 .onReceive(timer) { _ in
                     guard let stats = networkManager.stats else { return }
                     timers["claude"] = formatCountdown(stats.claude?.resetsAt)
@@ -120,6 +174,7 @@ struct ContentView: View {
 }
 
 struct OrbPage: View {
+    var atlasName: String
     var label: String
     var primaryLabel: String
     var secondaryLabel: String? = nil
@@ -138,6 +193,7 @@ struct OrbPage: View {
 
             // ── 球:放大铺满,略微上移以视觉居中 ──
             LiquidOrbView(
+                atlasName: atlasName,
                 label: label,
                 primaryPct: primaryPct,
                 secondaryPct: secondaryPct,

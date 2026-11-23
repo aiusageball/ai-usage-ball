@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "enables updater permissions for direct builds",
+  "windows": [
+    "main",
+    "widget-*"
+  ],
+  "permissions": [
+    "updater:default"
+  ]
+}

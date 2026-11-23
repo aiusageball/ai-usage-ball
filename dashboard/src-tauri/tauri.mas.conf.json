@@ -1,0 +1,39 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "build": {
+    "beforeBuildCommand": "npm run build:mas"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AI Usage Ball",
+        "width": 1000,
+        "height": 470,
+        "minWidth": 860,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "center": true
+      }
+    ],
+    "macOSPrivateApi": false,
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:*; media-src 'self' http://127.0.0.1:*; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
+    }
+  },
+  "bundle": {
+    "targets": ["app"],
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": null,
+      "entitlements": "entitlements.mas.plist"
+    }
+  },
+  "plugins": {}
+}

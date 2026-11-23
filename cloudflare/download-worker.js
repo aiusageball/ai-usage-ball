@@ -7,19 +7,26 @@ export default {
       const days = Math.min(Math.max(parseInt(url.searchParams.get("days") || "90", 10) || 90, 1), 366);
       const since = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
       const byRef = {}, byDay = {};
+      const keys = [];
       let total = 0, cursor;
       do {
         const r = await env.DL.list({ prefix: "c:", cursor });
         for (const k of r.keys) {
           const [, day, ref] = k.name.split(":");
-          if (day < since) continue;
-          const n = parseInt((await env.DL.get(k.name)) || "0", 10);
-          byRef[ref] = (byRef[ref] || 0) + n;
-          (byDay[day] ||= {})[ref] = n;
-          total += n;
+          if (day >= since) keys.push({ name: k.name, day, ref });
         }
         cursor = r.list_complete ? null : r.cursor;
       } while (cursor);
+      for (let i = 0; i < keys.length; i += 10) {
+        const batch = keys.slice(i, i + 10);
+        const vals = await Promise.all(batch.map((k) => env.DL.get(k.name)));
+        batch.forEach((k, idx) => {
+          const n = parseInt(vals[idx] || "0", 10);
+          byRef[k.ref] = (byRef[k.ref] || 0) + n;
+          (byDay[k.day] ||= {})[k.ref] = n;
+          total += n;
+        });
+      }
       return new Response(JSON.stringify({ since, total, byRef, byDay }, null, 2), {
         headers: { "content-type": "application/json", "cache-control": "no-store", "x-robots-tag": "noindex" },
       });

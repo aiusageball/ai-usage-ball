@@ -29,6 +29,8 @@
    transform(平移+旋转+缩放),退出原样放回。
    ═══════════════════════════════════════════════════════════════════ */
 
+import { IS_APP_STORE } from './config';
+
 // ── 可调参数(手感全在这里) ─────────────────────────────────────────
 export const PHYS = {
   DRAG_THRESHOLD: 6,     // px,超过才算拖拽(区分普通点击)
@@ -117,6 +119,7 @@ const G = {
   // 拉弓蓄力松手弹射。holdActive 时每帧把球位置吸附到鼠标位置,速度由
   // 帧间位移算出 —— 拖得快、角度斜,撞到球时力度/方向就相应地大/偏。
   holdActive: false, holdTargetX: 0, holdTargetY: 0,
+  activeDragCleanup: null,
   chromeTop: 0, chromeBottom: 0,   // 顶栏底部/底栏顶部的真实屏幕 y 坐标
 };
 
@@ -125,7 +128,7 @@ let winApi = null;
 try { import('@tauri-apps/api/window').then((m) => { winApi = m; }); } catch (e) {}
 // 主窗口默认尺寸(须与 tauri.conf.json 里 windows[0].width/height 保持一致)。
 // 玩家可能在游戏过程中手动把窗口拉大,退出游戏后把窗口尺寸复原成这个默认值。
-const DEFAULT_WIN_W = 860, DEFAULT_WIN_H = 470;
+const DEFAULT_WIN_W = 1000, DEFAULT_WIN_H = 470;
 
 // ── 状态机 ──────────────────────────────────────────────────────────
 const States = {};
@@ -1295,6 +1298,7 @@ function exitGame() {
   window.removeEventListener('keydown', onKey);
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('mousedown', onGameGrab);
+  if (G.activeDragCleanup) { G.activeDragCleanup(); G.activeDragCleanup = null; }
   G.keys.clear(); G.drag = null; G.statics = []; G.holdActive = false;
   G.stateName = 'dormant'; G.state = null;
 }
@@ -1331,11 +1335,16 @@ function onGameGrab(e) {
       ev.preventDefault();
       G.holdTargetX = ev.clientX; G.holdTargetY = ev.clientY;
     };
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      if (G.activeDragCleanup === cleanup) G.activeDragCleanup = null;
+    };
+    const up = () => {
+      cleanup();
       G.holdActive = false;   // 松手:球保留最后一帧的拖动速度,交还给自由物理
     };
+    G.activeDragCleanup = cleanup;
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
     return;
@@ -1343,10 +1352,19 @@ function onGameGrab(e) {
 
   // 其他阶段(竞技场 / 第一关消除):拉弓蓄力,松手反向弹射。
   G.drag = { sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, inGame: true };
-  const move = (ev) => { ev.preventDefault(); G.drag.cx = ev.clientX; G.drag.cy = ev.clientY; };
-  const up = (ev) => {
+  const move = (ev) => {
+    if (!G.drag) return;
+    ev.preventDefault();
+    G.drag.cx = ev.clientX; G.drag.cy = ev.clientY;
+  };
+  const cleanup = () => {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    if (G.activeDragCleanup === cleanup) G.activeDragCleanup = null;
+  };
+  const up = (ev) => {
+    cleanup();
+    if (!G.drag) return;
     const dx = ev.clientX - G.drag.sx, dy = ev.clientY - G.drag.sy;
     G.drag = null;
     if (Math.hypot(dx, dy) > PHYS.DRAG_THRESHOLD) {
@@ -1355,12 +1373,14 @@ function onGameGrab(e) {
       sfx.bounce(0.5);
     }
   };
+  G.activeDragCleanup = cleanup;
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
 }
 
 // ── 对外 API ────────────────────────────────────────────────────────
 export function eggBeginDrag(e, el) {
+  if (IS_APP_STORE) return;
   if (e.button !== 0 || !el || G.stateName !== 'dormant') return;
   e.preventDefault();   // 不阻止的话,横扫式拖拽会被浏览器当成"选中文字"
   audioCtx();
