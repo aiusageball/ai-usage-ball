@@ -12,7 +12,7 @@ glance.
 
 <sub>Demo uses sample data and a time-lapse; the window-to-desktop fly-out is a demo effect.</sub>
 
-**Try the signed, notarized build (Apple Silicon, macOS 12+):** [Download for Apple Silicon](https://github.com/aiusageball/ai-usage-ball/releases/latest/download/AI-Usage-Ball.dmg)
+**Try the signed, notarized build (Apple Silicon, macOS 12+):** [Download for Apple Silicon](https://aiusageball.com/download?ref=readme)
 or [see the website](https://aiusageball.com) for details. Or with Homebrew:
 
 ```bash

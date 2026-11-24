@@ -1,0 +1,16 @@
+name = "aiub-download"
+main = "download-worker.js"
+compatibility_date = "2026-10-01"
+account_id = "65ed99ebfe31757dec2106e8ced76c07"
+
+[[kv_namespaces]]
+binding = "DL"
+id = "cb8b32f27e4b4687b18a4053ca41f691"
+
+[[routes]]
+pattern = "aiusageball.com/download*"
+zone_name = "aiusageball.com"
+
+[[routes]]
+pattern = "www.aiusageball.com/download*"
+zone_name = "aiusageball.com"
