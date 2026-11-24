@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.10] — 2026-11-25
+
+### Fixed
+- **Desktop Orb Position**: Fixed a jump when clicking the Codex orb. Desktop orbs now start moving only after you hold the button and move the pointer at least six screen points. Double-clicking still opens the corresponding app.
+
 ## [0.3.9] — 2026-11-23
 
 ### Added

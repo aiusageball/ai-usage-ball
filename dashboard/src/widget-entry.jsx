@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useId } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalPosition } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -12,6 +12,9 @@ import {
   formatCodexPrimaryCountdown,
 } from './utils/countdown';
 import './Widget.css';
+
+const WIDGET_DRAG_THRESHOLD = 6;
+const WIDGET_CONTROLS = 'button, .widget-context-menu, .orb-login-hint, .orb-login-cta';
 
 /* ── Orb configuration per type ── */
 const buildOrbConfig = (orbLabels, t) => ({
@@ -416,7 +419,6 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
             <span
               className={`orb-timer ${authFix.cls}`}
               onClick={(e) => { e.stopPropagation(); if (authFix.on) authFix.on(); }}
-              onMouseDown={(e) => e.stopPropagation()}
               style={{ cursor: authFix.on ? 'pointer' : 'default' }}
               title={authFix.title}
             >{authFix.hint}</span>
@@ -443,7 +445,6 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
           <p
             className="orb-subtitle orb-offline orb-login-cta"
             onClick={(e) => { e.stopPropagation(); if (authFix.on) authFix.on(); }}
-            onMouseDown={(e) => e.stopPropagation()}
             style={{ cursor: authFix.on ? 'pointer' : 'default' }}
             title={authFix.title}
           >{authFix.cta}</p>
@@ -624,18 +625,79 @@ function WidgetApp() {
     };
   }, []);
 
-  // Drag the window manually (no data-tauri-drag-region → no native
-  // double-click "zoom to center"). startDragging only moves on actual drag.
-  const handleMouseDown = (e) => {
-    if (e.button !== 0) return;      // left button only
-    if (e.detail >= 2) return;       // second click of a double-click: skip drag
+  const dragRef = useRef(null);
+
+  const handlePointerDown = (e) => {
+    if (!e.isPrimary || e.button !== 0) return;
+    dragRef.current = null;
+    if (e.target.closest(WIDGET_CONTROLS)) return;
     if (menu) { setMenu(null); return; }
-    getCurrentWindow().startDragging().catch(() => {});
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.screenX,
+      startY: e.screenY,
+      x: e.screenX,
+      y: e.screenY,
+      moved: false,
+      origin: null,
+      frame: null,
+    };
+  };
+
+  const moveWidget = (drag) => {
+    if (!drag.origin || drag.frame !== null) return;
+    drag.frame = requestAnimationFrame(() => {
+      drag.frame = null;
+      if (dragRef.current !== drag) return;
+      const x = drag.origin.x + drag.x - drag.startX;
+      const y = drag.origin.y + drag.y - drag.startY;
+      drag.win.setPosition(new LogicalPosition(x, y)).catch(() => {});
+    });
+  };
+
+  const handlePointerMove = (e) => {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== e.pointerId || !(e.buttons & 1)) return;
+    drag.x = e.screenX;
+    drag.y = e.screenY;
+    if (drag.moved) {
+      moveWidget(drag);
+      return;
+    }
+    if (Math.hypot(drag.x - drag.startX, drag.y - drag.startY) < WIDGET_DRAG_THRESHOLD) return;
+
+    // Leave clicks to WebKit. Only take control once the pointer has moved
+    // far enough with the button held, and measure from the original press.
+    drag.moved = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.win = getCurrentWindow();
+    Promise.all([drag.win.outerPosition(), drag.win.scaleFactor()])
+      .then(([position, scale]) => {
+        if (dragRef.current !== drag) return;
+        drag.origin = position.toLogical(scale);
+        moveWidget(drag);
+      }).catch(() => {});
+  };
+
+  const handlePointerUp = (e) => {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== e.pointerId) return;
+    drag.pointerId = null;
+    if (!drag.moved) return;
+    drag.x = e.screenX;
+    drag.y = e.screenY;
+    moveWidget(drag);
+  };
+
+  const suppressDragClick = (e) => {
+    if (e.detail === 0 || !dragRef.current?.moved) return;
+    e.stopPropagation();
   };
 
   // Double-click the orb → launch this provider's desktop app in direct mode,
   // or bring back the main dashboard in App Store sandboxed mode.
-  const openProviderApp = () => {
+  const openProviderApp = (e) => {
+    if (dragRef.current?.moved || e.target.closest(WIDGET_CONTROLS)) return;
     if (IS_APP_STORE) {
       reopenMain();
       return;
@@ -673,7 +735,11 @@ function WidgetApp() {
   return (
     <div
       className="widget-container"
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => { dragRef.current = null; }}
+      onClickCapture={suppressDragClick}
       onDoubleClick={openProviderApp}
       onContextMenu={handleContextMenu}
     >
@@ -715,7 +781,6 @@ function WidgetApp() {
       {!IS_APP_STORE && updateReady && (
         <button
           className="widget-update-badge"
-          onMouseDown={(e) => e.stopPropagation()}
           onClick={restartForUpdate}
           title={t.widgetRestartUpdate}
         />
@@ -725,7 +790,6 @@ function WidgetApp() {
         <div
           className="widget-context-menu"
           style={{ left: menu.x, top: menu.y }}
-          onMouseDown={(e) => e.stopPropagation()}
         >
           <button onClick={reopenMain}>{t.widgetOpenDashboard}</button>
           {!IS_APP_STORE && updateReady && <button onClick={restartForUpdate}>{t.widgetRestartUpdate}</button>}
