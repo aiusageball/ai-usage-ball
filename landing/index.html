@@ -560,5 +560,15 @@
       if (list) list.innerHTML = '<div class="news-empty">Check back soon.</div>';
     });
 </script>
+<script>
+  (function(){
+    var raw = new URLSearchParams(location.search).get('ref') || '';
+    var ref = raw.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32);
+    if (!ref) return;
+    document.querySelectorAll('a[href="/download?ref=site"]').forEach(function(a){
+      a.href = '/download?ref=' + encodeURIComponent(ref);
+    });
+  })();
+</script>
 </body>
 </html>
