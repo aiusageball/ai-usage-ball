@@ -13,7 +13,7 @@ glance.
 <sub>Demo uses sample data and a time-lapse; the window-to-desktop fly-out is a demo effect.</sub>
 
 **Try the signed, notarized build (Apple Silicon, macOS 12+):** [Download for Apple Silicon](https://aiusageball.com/download?ref=readme)
-or [see the website](https://aiusageball.com) for details. Or with Homebrew:
+or [see the website](https://aiusageball.com/?ref=readme) for details. Or with Homebrew:
 
 ```bash
 brew tap aiusageball/aiusageball
@@ -37,7 +37,7 @@ you can and can't do with it.
 | `dashboard/` | The desktop app — Tauri v2 (Rust) + React frontend. Main window, desktop widgets, the liquid-orb visualization. |
 | `server/` | Python (FastAPI) backend the app talks to on `127.0.0.1:8000`. Reads local usage data (Claude via browser session cookie / CLI credentials, Codex via `~/.codex/auth.json`, Antigravity via local process detection) and streams it to the frontend over SSE. |
 | `AiPulseWatch/` | watchOS companion (SwiftUI), work in progress. |
-| `landing/` | Source for the [aiusageball.com](https://aiusageball.com) marketing site (static HTML, no build step). |
+| `landing/` | Source for the [aiusageball.com](https://aiusageball.com/?ref=readme) marketing site (static HTML, no build step). |
 
 ## Why developers use it
 
@@ -103,5 +103,5 @@ free to read, audit, modify, and build the source for personal / noncommercial
 use. Commercial use (selling it, bundling it, offering it as a paid service,
 etc.) isn't permitted under this license — get in touch if you want that.
 
-The official signed, notarized build at [aiusageball.com](https://aiusageball.com)
+The official signed, notarized build at [aiusageball.com](https://aiusageball.com/?ref=readme)
 supports continued development.
