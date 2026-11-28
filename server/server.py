@@ -212,16 +212,12 @@ state = {
         "needsSetup": False,
         "rate_limit_pct": 0.0,
         "rate_limit_pct_secondary": 0.0,
-        "rate_limit_pct_tertiary": 0.0,
         "status": "NORMAL",
         "status_secondary": "NORMAL",
-        "status_tertiary": "NORMAL",
         "reset_time": "",
         "reset_time_secondary": "",
-        "reset_time_tertiary": "",
         "resetsAt": "",
         "resetsAt_secondary": "",
-        "resetsAt_tertiary": "",
         "logs": []
     },
     "claude": {
@@ -313,13 +309,10 @@ def apply_demo_state(force_reset_timers: bool = False) -> None:
     ag["needsSetup"] = False
     ag["rate_limit_pct_secondary"] = 15.0
     ag["rate_limit_pct"] = 28.0
-    ag["rate_limit_pct_tertiary"] = 8.0
     ag["status"] = "NORMAL"
     ag["status_secondary"] = "NORMAL"
-    ag["status_tertiary"] = "NORMAL"
     ag["resetsAt_secondary"] = future(1 * 3600 + 52 * 60 + 10, ag.get("resetsAt_secondary", ""))
     ag["resetsAt"] = future(4 * 3600 + 5 * 60 + 30, ag.get("resetsAt", ""))
-    ag["resetsAt_tertiary"] = future(2 * 3600 + 15 * 60, ag.get("resetsAt_tertiary", ""))
 
     g = state["grok"]
     g["available"] = True
@@ -410,10 +403,6 @@ def clamp_expired_windows():
             ag["rate_limit_pct_secondary"] = 0.0
             ag["status_secondary"] = "NORMAL"
             ag["resetsAt_secondary"] = ""
-        if _iso_in_past(ag.get("resetsAt_tertiary", "")):
-            ag["rate_limit_pct_tertiary"] = 0.0
-            ag["status_tertiary"] = "NORMAL"
-            ag["resetsAt_tertiary"] = ""
 
     # Grok: a passed reset means the cached reading belongs to an old window.
     # Do NOT zero it (that showed a fake 100% remaining and flickered against
@@ -1189,10 +1178,8 @@ def _ag_pick_bucket(buckets):
     return best
 
 def _ag_parse_agy_groups(groups):
-    """Extract (gemini, gemini4, claude) (remaining_fraction, reset_iso) tuples from `agy -p /usage` groups."""
+    """Extract (gemini, claude) (remaining_fraction, reset_iso) tuples from `agy -p /usage` groups."""
     gemini = None
-    gemini_weekly = None
-    gemini4 = None
     claude = None
 
     def _tighter(cur, cand):
@@ -1214,25 +1201,12 @@ def _ag_parse_agy_groups(groups):
         g_name = str(g.get("name") or "").lower()
         bucket_ids = [str((b or {}).get("id") or "").lower() for b in buckets if isinstance(b, dict)]
 
-        if "argon" in g_name or "gemini 4" in g_name or any("argon" in bid for bid in bucket_ids):
-            gemini4 = _tighter(gemini4, picked)
-        elif "claude" in g_name or any("3p-" in bid for bid in bucket_ids):
+        if "claude" in g_name or any("3p-" in bid for bid in bucket_ids):
             claude = _tighter(claude, picked)
-        elif "gemini" in g_name or any("gemini-" in bid for bid in bucket_ids):
+        elif "gemini" in g_name or "argon" in g_name or any("gemini-" in bid or "argon" in bid for bid in bucket_ids):
             gemini = _tighter(gemini, picked)
-            weekly_buckets = [
-                b for b in buckets
-                if isinstance(b, dict) and (
-                    str(b.get("window") or "").strip().lower() == "weekly"
-                    or "weekly" in str(b.get("id") or "").lower()
-                )
-            ]
-            gemini_weekly = _tighter(gemini_weekly, _ag_pick_bucket(weekly_buckets))
 
-    # Ultra plans merge Argon into the general Gemini quota rather than exposing a separate Argon group.
-    if gemini4 is None:
-        gemini4 = gemini_weekly or gemini
-    return gemini, gemini4, claude
+    return gemini, claude
 
 def fetch_antigravity_usage_via_agy_cli():
     """Query `agy -p /usage --output-format json` when local language_server hides --csrf_token (2.34+)."""
@@ -1270,13 +1244,12 @@ def fetch_antigravity_usage_via_agy_cli():
     groups = ((payload.get("command") or {}).get("data") or {}).get("groups")
     if not isinstance(groups, list) or not groups:
         return None
-    gemini, gemini4, claude = _ag_parse_agy_groups(groups)
-    if gemini is None and gemini4 is None and claude is None:
+    gemini, claude = _ag_parse_agy_groups(groups)
+    if gemini is None and claude is None:
         return None
     return {
         "source": "agy",
         "gemini": gemini,
-        "gemini4": gemini4,
         "claude": claude,
         "plan": "agy CLI",
     }
@@ -1287,16 +1260,14 @@ def _ag_extract_from_local_status(status):
         return None
     us = status.get("userStatus") or {}
     models = ((us.get("cascadeModelConfigData") or {}).get("clientModelConfigs")) or []
-    gemini = _ag_worst(models, "gemini", exclude="gemini 4")
-    gemini4 = _ag_worst(models, "gemini 4")
+    gemini = _ag_worst(models, "gemini")
     claude = _ag_worst(models, "claude")
-    if gemini is None and gemini4 is None and claude is None:
+    if gemini is None and claude is None:
         return None
     plan = ((us.get("planStatus") or {}).get("planInfo") or {}).get("planName", "")
     return {
         "source": "local",
         "gemini": gemini,
-        "gemini4": gemini4,
         "claude": claude,
         "plan": plan,
     }
@@ -1308,13 +1279,10 @@ def _ag_mark_offline(needs_setup=False):
     ag["needsSetup"] = needs_setup
     ag["rate_limit_pct"] = 0.0
     ag["rate_limit_pct_secondary"] = 0.0
-    ag["rate_limit_pct_tertiary"] = 0.0
     ag["status"] = "OFFLINE"
     ag["status_secondary"] = "OFFLINE"
-    ag["status_tertiary"] = "OFFLINE"
     ag["resetsAt"] = ""
     ag["resetsAt_secondary"] = ""
-    ag["resetsAt_tertiary"] = ""
 
 async def poll_antigravity_local():
     """Poll Antigravity quota via local language_server RPC first, then `agy -p /usage` fallback."""
@@ -1350,16 +1318,14 @@ async def poll_antigravity_local():
                 ok = True
                 source = parsed["source"]
                 gemini = parsed["gemini"]
-                gemini4 = parsed["gemini4"]
                 claude = parsed["claude"]
                 state["antigravity"]["available"] = True
                 state["antigravity"]["loaded"] = True
                 state["antigravity"]["needsSetup"] = False
 
                 # Third orb:
-                # - outer ring (primary)   = "GEMINI REMAINING"   (secondary fields: Gemini 3.8 Flash)
-                # - middle ring (secondary)= "CLAUDE REMAINING"   (primary fields: Claude)
-                # - inner ring (tertiary)  = "GEMINI 4 REMAINING" (tertiary fields: Gemini 4)
+                # - outer ring (primary)   = "GEMINI REMAINING" (secondary fields: Gemini)
+                # - inner ring (secondary) = "CLAUDE REMAINING" (primary fields: Claude)
                 if gemini:
                     g_used = max(0.0, (1.0 - float(gemini[0])) * 100.0)
                     state["antigravity"]["rate_limit_pct_secondary"] = g_used
@@ -1380,22 +1346,11 @@ async def poll_antigravity_local():
                     state["antigravity"]["resetsAt"] = ""
                     state["antigravity"]["status"] = "NORMAL"
 
-                if gemini4:
-                    g4_used = max(0.0, (1.0 - float(gemini4[0])) * 100.0)
-                    state["antigravity"]["rate_limit_pct_tertiary"] = g4_used
-                    state["antigravity"]["resetsAt_tertiary"] = _ag_iso(gemini4[1])
-                    state["antigravity"]["status_tertiary"] = "EXHAUSTED" if g4_used >= 100 else "NORMAL"
-                else:
-                    state["antigravity"]["rate_limit_pct_tertiary"] = 0.0
-                    state["antigravity"]["resetsAt_tertiary"] = ""
-                    state["antigravity"]["status_tertiary"] = "NORMAL"
-
                 plan = parsed.get("plan") or source or "local"
                 timestamp = time.strftime("%H:%M:%S")
                 gpart = f"Gemini {100 - state['antigravity']['rate_limit_pct_secondary']:.0f}%" if gemini else ""
-                g4part = f"Gemini 4 {100 - state['antigravity']['rate_limit_pct_tertiary']:.0f}%" if gemini4 else ""
                 cpart = f"Claude {100 - state['antigravity']['rate_limit_pct']:.0f}%" if claude else ""
-                parts = " ".join(p for p in (gpart, g4part, cpart) if p)
+                parts = " ".join(p for p in (gpart, cpart) if p)
                 msg = f"Antigravity ({plan}): {parts} remaining".strip()
                 if not state["antigravity"]["logs"] or state["antigravity"]["logs"][0]["msg"] != msg:
                     state["antigravity"]["logs"].insert(0, {"time": timestamp, "msg": msg, "tokens": 0})
@@ -2024,9 +1979,6 @@ def update_config(body: AppConfigUpdate, request: Request):
             if "rate_limit_pct_secondary" in state[key]:
                 state[key]["rate_limit_pct_secondary"] = 0.0
                 state[key]["resetsAt_secondary"] = ""
-            if "rate_limit_pct_tertiary" in state[key]:
-                state[key]["rate_limit_pct_tertiary"] = 0.0
-                state[key]["resetsAt_tertiary"] = ""
 
     _notify_config_changed()
     return _config_summary()

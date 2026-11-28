@@ -2,6 +2,11 @@
 
 All notable changes to AI Usage Ball are documented here.
 
+## [0.3.11] — 2026-11-28
+
+### Changed
+- **Antigravity Dual-Ring Orb (Gemini + Claude)**: Removed the separate Gemini 4 inner gauge ring and third countdown timer now that Antigravity has consolidated all Gemini models back under the shared Gemini quota alongside Claude.
+
 ## [0.3.10] — 2026-11-25
 
 ### Fixed

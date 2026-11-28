@@ -59,24 +59,20 @@ const buildOrbConfig = (orbLabels, t) => ({
   antigravity: {
     color: '#06b6d4',
     secondaryColor: '#fb923c',
-    tertiaryColor: '#c084fc',
     glowColor: 'rgba(6, 182, 212, 0.4)',
     videoFilter: 'hue-rotate(185deg) saturate(1.8) brightness(1.2)',
     label: orbLabels.antigravity.title,
     primaryLabel: orbLabels.antigravity.primary,
     secondaryLabel: orbLabels.antigravity.secondary,
-    tertiaryLabel: orbLabels.antigravity.tertiary,
     hasWeeklySecondary: false,
     stackLabels: true,
     getData: (d) => ({
       percentage: 100 - (d.antigravity?.rate_limit_pct_secondary ?? 0),
       secondaryPercentage: 100 - (d.antigravity?.rate_limit_pct ?? 0),
-      tertiaryPercentage: 100 - (d.antigravity?.rate_limit_pct_tertiary ?? 0),
     }),
     getTimers: (d) => ({
       timer: formatCountdownHMS(d.antigravity.resetsAt_secondary, t.ready),
       secondaryTimer: formatCountdownHMS(d.antigravity.resetsAt, t.ready),
-      tertiaryTimer: formatCountdownHMS(d.antigravity.resetsAt_tertiary, t.ready),
     }),
   },
   grok: {
@@ -99,7 +95,7 @@ const buildOrbConfig = (orbLabels, t) => ({
 });
 
 /* ── DualRingOrb (self-contained copy for widget isolation) ── */
-const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, hasWeeklySecondary = false, stackLabels = false, videoFilter, offline = false, appName = null, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, needsSetup = false, onNeedsSetup = null, criticalPctThreshold = 20, criticalMinThreshold = 30, t = null }) => {
+const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, hasWeeklySecondary = false, stackLabels = false, videoFilter, offline = false, appName = null, resetCredits = null, dataLoaded = true, backendUrl = null, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, needsSetup = false, onNeedsSetup = null, criticalPctThreshold = 20, criticalMinThreshold = 30, t = null }) => {
   const uid = useId().replace(/:/g, '');
   // Which "fix it" prompt replaces the countdown, if any. Disk access wins
   // over login: when macOS refuses to open Chrome's cookie DB, logging in
@@ -113,36 +109,28 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
         ? { hint: t ? t.signInHint : 'SIGN IN', cls: 'orb-login-hint', cta: t ? t.signInCta : '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: t ? t.signInTitle : 'Open claude.ai to sign in' }
         : null;
   const hasSecondary = secondaryPercentage !== undefined;
-  const hasTertiary = tertiaryPercentage !== undefined;
 
   const isWeeklySecondary = hasWeeklySecondary || secondaryLabel === "WEEKLY REMAINING";
   const rawPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
   const isWeeklyExhausted = hasSecondary && isWeeklySecondary && rawPctSec <= 0;
 
-  const radius = hasTertiary ? 70 : 65;
-  const strokeW = hasTertiary ? 7 : 8;
+  const radius = 65;
+  const strokeW = 8;
   const circumference = 2 * Math.PI * radius;
   const validPct = isWeeklyExhausted ? 0 : Math.max(0, Math.min(100, percentage));
 
-  const radiusSec = hasTertiary ? 56 : 47;
-  const strokeWSec = hasTertiary ? 5.5 : 6;
+  const radiusSec = 47;
+  const strokeWSec = 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
   const validPctSec = rawPctSec;
-
-  const radiusTer = 43;
-  const strokeWTer = 4.5;
-  const circumferenceTer = 2 * Math.PI * radiusTer;
-  const validPctTer = hasTertiary ? Math.max(0, Math.min(100, tertiaryPercentage)) : 0;
 
   // 弹出 widget 时如果还没拿到真实数据(percentage 默认按 100% 算),环先保持
   // "空"而不是显示成满环再猛地跳到真实值——跟主界面同一个道理(见 App.jsx)。
   // Offline = no trustworthy reading: keep rings empty rather than showing the last value as live.
   const ringPct = (dataLoaded && !offline && !isWeeklyExhausted) ? validPct : 0;
   const ringPctSec = (dataLoaded && !offline) ? validPctSec : 0;
-  const ringPctTer = (dataLoaded && !offline) ? validPctTer : 0;
   const strokeDashoffset = circumference - (circumference * ringPct) / 100;
   const strokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
-  const strokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
 
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
@@ -161,7 +149,7 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
   };
 
   const pctThresh = criticalPctThreshold;
-  const isCritical = validPct < pctThresh || (hasSecondary && validPctSec < pctThresh) || (hasTertiary && validPctTer < pctThresh) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
+  const isCritical = validPct < pctThresh || (hasSecondary && validPctSec < pctThresh) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer));
   const isCriticalRef = useRef(isCritical);
   isCriticalRef.current = isCritical;
 
@@ -368,12 +356,6 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             )}
-            {hasTertiary && (
-              <filter id={`glow-ter-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            )}
           </defs>
           <circle cx="100" cy="100" r={radius} stroke={color} opacity="0.15" strokeWidth={strokeW} fill="none" />
           <circle
@@ -399,22 +381,9 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
           ) : (
             <circle cx="100" cy="100" r="45" stroke={color} opacity="0.08" strokeWidth="10" fill="none" />
           )}
-          {hasTertiary && (
-            <>
-              <circle cx="100" cy="100" r={radiusTer} stroke={tertiaryColor || '#c084fc'} opacity="0.14" strokeWidth={strokeWTer} fill="none" />
-              <circle
-                cx="100" cy="100" r={radiusTer}
-                stroke={tertiaryColor || '#c084fc'} strokeWidth={strokeWTer} fill="none"
-                opacity="0.85" strokeLinecap="round"
-                strokeDasharray={circumferenceTer} strokeDashoffset={strokeDashoffsetTer}
-                transform="rotate(-90 100 100)"
-                filter={`url(#glow-ter-${uid})`}
-              />
-            </>
-          )}
         </svg>
 
-        <div className={`orb-timer-wrapper${tertiaryTimer ? ' has-tertiary' : ''}`}>
+        <div className="orb-timer-wrapper">
           {authFix ? (
             <span
               className={`orb-timer ${authFix.cls}`}
@@ -427,9 +396,6 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
           )}
           {authFix || offline ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
-          ) : null}
-          {authFix || offline ? null : tertiaryTimer ? (
-            <span className="orb-timer-tertiary" style={{ color: tertiaryColor || '#c084fc', textShadow: `0 0 8px ${tertiaryColor || '#c084fc'}` }}>{tertiaryTimer}</span>
           ) : null}
         </div>
 
@@ -454,9 +420,6 @@ const DualRingOrb = ({ color, glowColor, timer, secondaryTimer, tertiaryTimer, p
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: secondaryColor, boxShadow: `0 0 6px ${secondaryColor}` }} />{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
-            {hasTertiary && (
-              <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: tertiaryColor || '#c084fc', boxShadow: `0 0 6px ${tertiaryColor || '#c084fc'}` }} />{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
-            )}
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">{t ? t.resetsLeft(resetCredits) : `↺ ${resetCredits} ${resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT`}</p>}
           </div>
         ) : (
@@ -536,12 +499,12 @@ function WidgetApp() {
   }, []);
 
   const [data, setData] = useState({
-    antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, rate_limit_pct_tertiary: 0, resetsAt: '', resetsAt_secondary: '', resetsAt_tertiary: '' },
+    antigravity: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
     claude: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '' },
     codex: { loaded: false, rate_limit_pct: 0, rate_limit_pct_secondary: 0, resetsAt: '', resetsAt_secondary: '', primary_window_started: false },
     grok: { loaded: false, rate_limit_pct: 0, resetsAt: '', status: 'NORMAL' },
   });
-  const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00', tertiaryTimer: undefined });
+  const [timers, setTimers] = useState({ timer: '00:00:00', secondaryTimer: '00:00:00' });
   const [backendUrl, setBackendUrl] = useState(null);
 
   useEffect(() => {
@@ -746,19 +709,15 @@ function WidgetApp() {
       <DualRingOrb
         color={config.color}
         secondaryColor={config.secondaryColor}
-        tertiaryColor={config.tertiaryColor}
         glowColor={config.glowColor}
         videoFilter={config.videoFilter}
         timer={timers.timer}
         secondaryTimer={timers.secondaryTimer}
-        tertiaryTimer={timers.tertiaryTimer}
         percentage={orbData.percentage}
         secondaryPercentage={orbData.secondaryPercentage}
-        tertiaryPercentage={orbData.tertiaryPercentage}
         label={config.label}
         primaryLabel={config.primaryLabel}
         secondaryLabel={orbData.secondaryLabel ?? config.secondaryLabel}
-        tertiaryLabel={config.tertiaryLabel}
         hasWeeklySecondary={!!config.hasWeeklySecondary}
         stackLabels={config.stackLabels}
         connected={true}

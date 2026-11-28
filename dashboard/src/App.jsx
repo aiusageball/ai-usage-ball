@@ -714,7 +714,7 @@ const SettingsModal = ({
   );
 };
 
-const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTimer, tertiaryTimer, percentage, secondaryPercentage, tertiaryPercentage, secondaryColor, tertiaryColor, label, primaryLabel, secondaryLabel, tertiaryLabel, hasWeeklySecondary = false, stackLabels = false, videoFilter, onPopOut, offline = false, appName = null, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, needsSetup = false, onNeedsSetup = null, criticalPctThreshold = 20, criticalMinThreshold = 30, t = null, backendUrl = null }) => {
+const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTimer, percentage, secondaryPercentage, secondaryColor, label, primaryLabel, secondaryLabel, hasWeeklySecondary = false, stackLabels = false, videoFilter, onPopOut, offline = false, appName = null, ambientPulse = false, resetCredits = null, dataLoaded = true, introOrder = 0, needsLogin = false, onNeedsLogin = null, needsDiskAccess = false, onNeedsDiskAccess = null, needsSetup = false, onNeedsSetup = null, criticalPctThreshold = 20, criticalMinThreshold = 30, t = null, backendUrl = null }) => {
   // Which "fix it" prompt to show in place of the countdown, if any. Disk
   // access wins over login: when macOS refuses to open Chrome's cookie DB,
   // logging in can't help, so telling the user to do it is actively wrong.
@@ -726,29 +726,20 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
         ? { hint: t ? t.signInHint : 'SIGN IN', cls: 'orb-login-hint', cta: t ? t.signInCta : '⚠ LOG IN TO CLAUDE.AI', on: onNeedsLogin, title: t ? t.signInTitle : 'Open claude.ai to sign in' }
         : null;
   const hasSecondary = secondaryPercentage !== undefined;
-  const hasTertiary = tertiaryPercentage !== undefined;
 
   const isWeeklySecondary = hasWeeklySecondary || secondaryLabel === "WEEKLY REMAINING";
   const rawPctSec = hasSecondary ? Math.max(0, Math.min(100, secondaryPercentage)) : 0;
   const isWeeklyExhausted = hasSecondary && isWeeklySecondary && rawPctSec <= 0;
 
-  // When a third inner ring is present (Antigravity: Gemini 3.8 + Claude + Gemini 4),
-  // slightly expand the outer ring and tighten spacing so all three concentric
-  // rings sit cleanly around the countdown readout without crowding it.
-  const radius = hasTertiary ? 70 : 65;
-  const strokeW = hasTertiary ? 7 : 8;
+  const radius = 65;
+  const strokeW = 8;
   const circumference = 2 * Math.PI * radius;
   const validPct = isWeeklyExhausted ? 0 : Math.max(0, Math.min(100, percentage));
 
-  const radiusSec = hasTertiary ? 56 : 47;
-  const strokeWSec = hasTertiary ? 5.5 : 6;
+  const radiusSec = 47;
+  const strokeWSec = 6;
   const circumferenceSec = 2 * Math.PI * radiusSec;
   const validPctSec = rawPctSec;
-
-  const radiusTer = 43;
-  const strokeWTer = 4.5;
-  const circumferenceTer = 2 * Math.PI * radiusTer;
-  const validPctTer = hasTertiary ? Math.max(0, Math.min(100, tertiaryPercentage)) : 0;
 
   const videoRef = useRef(null);
   const videoRetryRef = useRef(0);
@@ -770,7 +761,7 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
     return false;
   };
 
-  const isCritical = validPct < criticalPctThreshold || (hasSecondary && validPctSec < criticalPctThreshold) || (hasTertiary && validPctTer < criticalPctThreshold) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer)) || (hasTertiary && isTimerCritical(tertiaryTimer));
+  const isCritical = validPct < criticalPctThreshold || (hasSecondary && validPctSec < criticalPctThreshold) || isTimerCritical(timer) || (hasSecondary && isTimerCritical(secondaryTimer));
   const isCriticalRef = useRef(isCritical);
   isCriticalRef.current = isCritical;
 
@@ -935,10 +926,8 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
   // Offline = no trustworthy reading: keep rings empty rather than showing the last value as live.
   const ringPct = (revealed && !offline && !isWeeklyExhausted) ? validPct : 0;
   const ringPctSec = (revealed && !offline) ? validPctSec : 0;
-  const ringPctTer = (revealed && !offline) ? validPctTer : 0;
   const displayStrokeDashoffset = circumference - (circumference * ringPct) / 100;
   const displayStrokeDashoffsetSec = circumferenceSec - (circumferenceSec * ringPctSec) / 100;
-  const displayStrokeDashoffsetTer = circumferenceTer - (circumferenceTer * ringPctTer) / 100;
 
   const isExhausted = validPct <= 0 || isWeeklyExhausted;
 
@@ -1016,12 +1005,6 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             )}
-            {hasTertiary && (
-              <filter id={`glow-ter-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            )}
           </defs>
           
           {/* Track background (dimmed a lot more than the progress arc so
@@ -1042,7 +1025,7 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
           />
 
           {/* Inner Rings */}
-          <circle cx="100" cy="100" r={hasTertiary ? 62 : 54} stroke={hasSecondary ? secondaryColor : color} opacity="0.3" strokeWidth="1" fill="none" />
+          <circle cx="100" cy="100" r={54} stroke={hasSecondary ? secondaryColor : color} opacity="0.3" strokeWidth="1" fill="none" />
           
           {hasSecondary ? (
             <>
@@ -1062,28 +1045,10 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
           ) : (
             <circle cx="100" cy="100" r="45" stroke={color} opacity="0.08" strokeWidth="10" fill="none" />
           )}
-
-          {hasTertiary && (
-            <>
-              <circle cx="100" cy="100" r="49" stroke={tertiaryColor || '#c084fc'} opacity="0.28" strokeWidth="1" fill="none" />
-              <circle cx="100" cy="100" r={radiusTer} stroke={tertiaryColor || '#c084fc'} opacity="0.18" strokeWidth={strokeWTer} fill="none" />
-              <circle
-                cx="100" cy="100" r={radiusTer}
-                stroke={tertiaryColor || '#c084fc'}
-                strokeWidth={strokeWTer}
-                fill="none"
-                strokeLinecap="round"
-                strokeDasharray={circumferenceTer}
-                strokeDashoffset={displayStrokeDashoffsetTer}
-                transform="rotate(-90 100 100)"
-                filter={`url(#glow-ter-${uid})`}
-              />
-            </>
-          )}
         </svg>
 
         {/* Digital Timer */}
-        <div className={`orb-timer-wrapper${tertiaryTimer ? ' has-tertiary' : ''}`} style={{ opacity: (revealed || authFix) ? 1 : 0 }}>
+        <div className="orb-timer-wrapper" style={{ opacity: (revealed || authFix) ? 1 : 0 }}>
           {authFix ? (
             <span
               className={`orb-timer ${authFix.cls}`}
@@ -1096,9 +1061,6 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
           )}
           {authFix || offline ? null : secondaryTimer ? (
             <span className="orb-timer-secondary" style={{ color: secondaryColor || '#fb923c', textShadow: `0 0 8px ${secondaryColor || '#fb923c'}` }}>{secondaryTimer}</span>
-          ) : null}
-          {authFix || offline ? null : tertiaryTimer ? (
-            <span className="orb-timer-tertiary" style={{ color: tertiaryColor || '#c084fc', textShadow: `0 0 8px ${tertiaryColor || '#c084fc'}` }}>{tertiaryTimer}</span>
           ) : null}
         </div>
 
@@ -1137,9 +1099,6 @@ const DualRingOrb = ({ providerKey = null, color, glowColor, timer, secondaryTim
           <div className="orb-usage-lines" style={{ flexDirection: stackLabels ? 'column' : 'row', gap: stackLabels ? '4px' : '8px' }}>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />{primaryLabel || "PRIMARY"} {validPct.toFixed(0)}%</p>
             <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: secondaryColor, boxShadow: `0 0 6px ${secondaryColor}` }} />{secondaryLabel || "SECONDARY"} {validPctSec.toFixed(0)}%</p>
-            {hasTertiary && (
-              <p className="orb-subtitle"><span className="orb-indicator-dot" style={{ backgroundColor: tertiaryColor || '#c084fc', boxShadow: `0 0 6px ${tertiaryColor || '#c084fc'}` }} />{tertiaryLabel || "TERTIARY"} {validPctTer.toFixed(0)}%</p>
-            )}
             {resetCredits != null && <p className="orb-subtitle orb-reset-credits">{t ? t.resetsLeft(resetCredits) : `↺ ${resetCredits} ${resetCredits === 1 ? 'RESET' : 'RESETS'} LEFT`}</p>}
           </div>
         ) : (
@@ -1162,16 +1121,12 @@ function App() {
       loaded: false,
       rate_limit_pct: 0.0,
       rate_limit_pct_secondary: 0.0,
-      rate_limit_pct_tertiary: 0.0,
       status: "NORMAL",
       status_secondary: "NORMAL",
-      status_tertiary: "NORMAL",
       reset_time: "",
       reset_time_secondary: "",
-      reset_time_tertiary: "",
       resetsAt: "",
-      resetsAt_secondary: "",
-      resetsAt_tertiary: ""
+      resetsAt_secondary: ""
     },
     claude: {
       provider: "Claude",
@@ -1561,7 +1516,6 @@ function App() {
     codex_secondary: "00:00:00",
     antigravity: "00:00:00",
     antigravity_claude: "00:00:00",
-    antigravity_gemini4: "00:00:00",
     grok: "00:00:00"
   });
   
@@ -1666,7 +1620,6 @@ function App() {
         codex_secondary: formatCountdownHMS(d.codex.resetsAt_secondary, curT.ready),
         antigravity: formatCountdownHMS(d.antigravity.resetsAt_secondary, curT.ready),
         antigravity_claude: formatCountdownHMS(d.antigravity.resetsAt, curT.ready),
-        antigravity_gemini4: formatCountdownHMS(d.antigravity.resetsAt_tertiary, curT.ready),
         grok: formatCountdownHMS(d.grok?.resetsAt, curT.ready)
       });
 
@@ -1827,24 +1780,20 @@ function App() {
             onPopOut={() => { launchWidget('codex'); setHasPoppedOutWidget(true); }}
           />
 
-          {/* Orb 3: Slot 3 (Cyan-Blue + Orange + Violet) */}
+          {/* Orb 3: Slot 3 (Cyan-Blue + Orange) */}
           <DualRingOrb
             providerKey="antigravity"
             color="#06b6d4"
             secondaryColor="#fb923c"
-            tertiaryColor="#c084fc"
             glowColor="rgba(6, 182, 212, 0.4)"
             videoFilter="hue-rotate(185deg) saturate(1.8) brightness(1.2)"
             timer={timers.antigravity}
             secondaryTimer={timers.antigravity_claude}
-            tertiaryTimer={timers.antigravity_gemini4}
             percentage={100 - (data.antigravity?.rate_limit_pct_secondary ?? 0)}
             secondaryPercentage={100 - (data.antigravity?.rate_limit_pct ?? 0)}
-            tertiaryPercentage={100 - (data.antigravity?.rate_limit_pct_tertiary ?? 0)}
             label={orbLabels.antigravity.title}
             primaryLabel={orbLabels.antigravity.primary}
             secondaryLabel={orbLabels.antigravity.secondary}
-            tertiaryLabel={orbLabels.antigravity.tertiary}
             stackLabels={true}
             connected={connected}
             dataLoaded={!!data.antigravity.loaded}

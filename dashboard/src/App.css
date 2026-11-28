@@ -477,23 +477,6 @@ body.egg-mode .spheres-grid { opacity: 0 !important; pointer-events: none; }
   margin-top: 4px;
 }
 
-.orb-timer-tertiary {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  margin-top: 2px;
-}
-
-.orb-timer-wrapper.has-tertiary .orb-timer {
-  font-size: 1.32rem;
-}
-
-.orb-timer-wrapper.has-tertiary .orb-timer-secondary {
-  font-size: 0.68rem;
-  margin-top: 2px;
-}
-
 /* Glass Specular Reflection */
 .orb-specular {
   position: absolute;

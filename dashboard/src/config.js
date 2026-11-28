@@ -1,5 +1,5 @@
 export const IS_APP_STORE = import.meta.env.VITE_APP_STORE === 'true';
-export const APP_VERSION = '0.3.9';
+export const APP_VERSION = '0.3.11';
 
 export const CUSTOM_LABELS_STORAGE_KEY = 'aipulse_customLabels';
 
@@ -21,7 +21,6 @@ export function getDefaultOrbLabels(isAppStore = IS_APP_STORE, lang = 'en') {
           title: '工作区',
           primary: '快速配额',
           secondary: '专业配额',
-          tertiary: '旗舰配额',
         },
         grok: {
           title: '任务助手',
@@ -45,7 +44,6 @@ export function getDefaultOrbLabels(isAppStore = IS_APP_STORE, lang = 'en') {
         title: 'WORKSPACE',
         primary: 'FAST QUOTA',
         secondary: 'PRO QUOTA',
-        tertiary: 'ULTRA QUOTA',
       },
       grok: {
         title: 'TASK BOT',
@@ -70,7 +68,6 @@ export function getDefaultOrbLabels(isAppStore = IS_APP_STORE, lang = 'en') {
       title: 'ANTIGRAVITY',
       primary: 'GEMINI REMAINING',
       secondary: 'CLAUDE REMAINING',
-      tertiary: 'GEMINI 4 REMAINING',
     },
     grok: {
       title: 'GROK',
